@@ -22,8 +22,8 @@ Any agent completing a class **MUST** update this file.
 - [x] `GameMath.java` (`com.dotgears.C0213j`) - Trig lookup tables (360°), easing tables (0..100), PRNG (Verified with JUnit test suite)
 - [x] `AtlasItem.java` (`com.dotgears.C0212i`) - Atlas coordinate entry data model (Verified with 71-sprite atlas test suite)
 - [x] `NumberRenderer.java` (`com.dotgears.C0215l`) - Digit renderer for HUD and scores (Verified with right-alignment & leading zeros test suite)
-- [ ] `BitmapFont.java` (`com.dotgears.C0211h`) - ASCII digit font renderer
-- [ ] `FlappyFont.java` (`com.dotgears.flappy.C0205b`) - Font variant for Flappy Bird
+- [x] `BitmapFont.java` (`com.dotgears.C0211h`) - ASCII digit font renderer (Verified with kerning & alignment test suite)
+- [x] `FlappyFont.java` (`com.dotgears.flappy.C0205b`) - Font variant for Flappy Bird (Verified with kerning 4 & "font" prefix)
 
 ### 2. Core Entity & Animation System
 - [x] `GameObject.java` (`com.dotgears.C0216m`) - Base entity class (`update`, `render`, active/visible)
