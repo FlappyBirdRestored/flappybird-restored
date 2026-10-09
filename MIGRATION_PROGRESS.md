@@ -33,7 +33,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `EntityPool.java` (`com.dotgears.C0217n`) - Pre-allocated fixed-size array object pool (Verified with round-robin cycling & reset tests)
 
 ### 3. UI & Secondary Entities
-- [ ] `Button.java` (`com.dotgears.C0203f`) - Touch UI button (bounds check, click handling)
+- [x] `Button.java` (`com.dotgears.C0203f`) - Touch UI button (bounds check, click handling, 2px pressed offset) (Verified with bounding box & click lifecycle test suite)
 - [ ] `Sparkle.java` (`com.dotgears.C0202e`) - Medal glint / sparkle animation
 - [ ] `Medal.java` (`com.dotgears.C0214k`) - Award medal renderer with sparkle timers
 - [ ] `ScoreParticle.java` (`com.dotgears.C0218o`) - Floating score indicator

@@ -17,6 +17,15 @@ public class GameEngine extends GameObject {
     /** Pre-allocated array of up to 512 AtlasItems loaded from atlas.txt (f588a). */
     public AtlasItem[] atlasItems = new AtlasItem[512];
 
+    /** Number of active touch points (decompiled from f608u). */
+    public int touchCount = 0;
+
+    /** Touch X coordinate buffer for up to 10 points (decompiled from f606s). */
+    public int[] touchX = new int[10];
+
+    /** Touch Y coordinate buffer for up to 10 points (decompiled from f607t). */
+    public int[] touchY = new int[10];
+
     public GameEngine() {
         instance = this;
     }
