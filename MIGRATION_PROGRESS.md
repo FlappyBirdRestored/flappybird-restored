@@ -7,16 +7,19 @@ Any agent completing a class **MUST** update this file.
 ---
 
 ## Overall Status
-* **Current Phase**: Phase 1 (Project Scaffolding)
+* **Current Phase**: Phase 2 (Data, Math & Utilities)
+* **Completed Phases**:
+  * [x] **Phase 1: Project Scaffolding & Setup** (Modern Gradle 8.7, targetSdk 35, AndroidManifest, asset/sound migration verified with SHA256 parity)
 * **Target Package**: `com.dotgears` / `com.dotgears.flappy`
 * **Target Location**: `app/src/main/java/`
+
 
 ---
 
 ## Class Migration Checklist
 
 ### 1. Data, Math & Utilities
-- [ ] `GameMath.java` (`com.dotgears.C0213j`) - Trig lookup tables (360°), easing tables (0..100), PRNG
+- [x] `GameMath.java` (`com.dotgears.C0213j`) - Trig lookup tables (360°), easing tables (0..100), PRNG (Verified with JUnit test suite)
 - [ ] `AtlasItem.java` (`com.dotgears.C0212i`) - Atlas coordinate entry data model
 - [ ] `NumberRenderer.java` (`com.dotgears.C0215l`) - Digit renderer for HUD and scores
 - [ ] `BitmapFont.java` (`com.dotgears.C0211h`) - ASCII digit font renderer
