@@ -32,6 +32,15 @@ public class GameEngine extends GameObject {
     /** Pre-allocated pool of 20 ScoreParticle objects (decompiled from f600m). */
     public EntityPool scoreParticles = new EntityPool();
 
+    /** NumberRenderer for score panel (decompiled from f585B). */
+    public NumberRenderer scoreRenderer;
+
+    /** Current game round score (decompiled from f612y). */
+    public int score = 0;
+
+    /** Saved all-time high score (decompiled from f613z). */
+    public int highScore = 0;
+
     public GameEngine() {
         instance = this;
         for (int i = 0; i < 10; i++) {
@@ -39,6 +48,17 @@ public class GameEngine extends GameObject {
         }
         for (int i = 0; i < 20; i++) {
             this.scoreParticles.add(new ScoreParticle());
+        }
+    }
+
+    /**
+     * Submits a score and updates highScore if current score is greater.
+     * Decompiled from: C0210g.m843a(int)
+     */
+    public void submitScore(int s) {
+        this.score = s;
+        if (s > this.highScore) {
+            this.highScore = s;
         }
     }
 
