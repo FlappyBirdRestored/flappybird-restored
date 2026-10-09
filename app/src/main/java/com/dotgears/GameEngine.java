@@ -26,8 +26,32 @@ public class GameEngine extends GameObject {
     /** Touch Y coordinate buffer for up to 10 points (decompiled from f607t). */
     public int[] touchY = new int[10];
 
+    /** Pre-allocated pool of 10 Sparkle objects for medal glints (decompiled from f601n). */
+    public EntityPool sparkles = new EntityPool();
+
     public GameEngine() {
         instance = this;
+        for (int i = 0; i < 10; i++) {
+            this.sparkles.add(new Sparkle());
+        }
+    }
+
+    /**
+     * Spawns a sparkle particle at (x, y).
+     * Decompiled from: C0210g.m857b(int, int)
+     */
+    public void spawnSparkle(int x, int y) {
+        if (this.sparkles != null && this.sparkles.size() > 0) {
+            Sparkle sparkle = (Sparkle) this.sparkles.acquireNext();
+            if (sparkle != null) {
+                sparkle.reset(x, y);
+            }
+        }
+    }
+
+    /** Alias for spawnSparkle to match C0210g.m857b. */
+    public void addSparkle(int x, int y) {
+        spawnSparkle(x, y);
     }
 
     /**
