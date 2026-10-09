@@ -42,7 +42,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `Tutorial.java` (`com.dotgears.flappy.C0209f`) - "Get Ready" and tap finger tutorial (Verified with linear fade-in, tap dismiss & fade-out lifecycle test suite)
 
 ### 4. Primary Game Entities & Mechanics
-- [ ] `Bird.java` (`com.dotgears.flappy.C0204a`) - Bird physics, flap impulse, gravity, angle clamping
+- [x] `Bird.java` (`com.dotgears.flappy.C0204a`) - Bird physics, flap impulse, gravity, angle clamping (Verified with immutable physics, hover wave, ground clamping & 3-color render test suite)
 
 ### 5. Engine, World & Game Loop
 - [ ] `GameEngine.java` (`com.dotgears.C0210g`) - Base DotGears game engine, atlas parser, render queue

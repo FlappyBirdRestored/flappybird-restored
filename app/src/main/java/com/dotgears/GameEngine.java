@@ -62,6 +62,13 @@ public class GameEngine extends GameObject {
     }
 
     /**
+     * Posts a delayed game event or sound effect trigger.
+     * Decompiled from: C0210g.m849a(int, GameObject, int)
+     */
+    public void postEvent(int eventType, GameObject target, int delay) {
+    }
+
+    /**
      * Submits a score and updates highScore if current score is greater.
      * Decompiled from: C0210g.m843a(int)
      */
