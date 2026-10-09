@@ -41,6 +41,9 @@ public class GameEngine extends GameObject {
     /** Saved all-time high score (decompiled from f613z). */
     public int highScore = 0;
 
+    /** ScoreBoard results dialog instance (decompiled from f586C). */
+    public ScoreBoard scoreBoard = new ScoreBoard();
+
     public GameEngine() {
         instance = this;
         for (int i = 0; i < 10; i++) {
@@ -49,6 +52,13 @@ public class GameEngine extends GameObject {
         for (int i = 0; i < 20; i++) {
             this.scoreParticles.add(new ScoreParticle());
         }
+    }
+
+    /**
+     * Records engine event or stat action.
+     * Decompiled from: C0210g.m859c(int, int)
+     */
+    public void recordEvent(int type, int value) {
     }
 
     /**
