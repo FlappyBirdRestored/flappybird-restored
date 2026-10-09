@@ -30,7 +30,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `Actor.java` (`com.dotgears.C0220q`) - Sprite entity with bounds, collision offsets, frame arrays (Verified with origin offset & render tests)
 - [x] `SpriteAnimation.java` (`com.dotgears.C0201d`) - Frame sequence player (Verified with 15ms accumulator & looping tests)
 - [x] `Tween.java` (`com.dotgears.C0221r`) - Value interpolator using `GameMath` curves (Verified with 60 Hz linear & easing progression tests)
-- [ ] `EntityPool.java` (`com.dotgears.C0217n`) - Pre-allocated fixed-size array object pool
+- [x] `EntityPool.java` (`com.dotgears.C0217n`) - Pre-allocated fixed-size array object pool (Verified with round-robin cycling & reset tests)
 
 ### 3. UI & Secondary Entities
 - [ ] `Button.java` (`com.dotgears.C0203f`) - Touch UI button (bounds check, click handling)
