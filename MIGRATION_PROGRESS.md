@@ -39,7 +39,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `ScoreParticle.java` (`com.dotgears.C0218o`) - Floating score indicator (Verified with 4-subtick gravity, lifespan, kerning & sign rendering test suite)
 - [x] `ScoreBoard.java` (`com.dotgears.C0219p`) - End-game results board and score counter (Verified with slide-in tween, rolling score, NEW badge & medal tiers test suite)
 - [x] `GameOverBanner.java` (`com.dotgears.flappy.C0208e`) - Drop animation for "GAME OVER" (Verified with curve 11 tween, bounce physics settling & ScoreBoard handoff test suite)
-- [ ] `Tutorial.java` (`com.dotgears.flappy.C0209f`) - "Get Ready" and tap finger tutorial
+- [x] `Tutorial.java` (`com.dotgears.flappy.C0209f`) - "Get Ready" and tap finger tutorial (Verified with linear fade-in, tap dismiss & fade-out lifecycle test suite)
 
 ### 4. Primary Game Entities & Mechanics
 - [ ] `Bird.java` (`com.dotgears.flappy.C0204a`) - Bird physics, flap impulse, gravity, angle clamping
