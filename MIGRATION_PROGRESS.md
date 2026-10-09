@@ -34,7 +34,7 @@ Any agent completing a class **MUST** update this file.
 
 ### 3. UI & Secondary Entities
 - [x] `Button.java` (`com.dotgears.C0203f`) - Touch UI button (bounds check, click handling, 2px pressed offset) (Verified with bounding box & click lifecycle test suite)
-- [ ] `Sparkle.java` (`com.dotgears.C0202e`) - Medal glint / sparkle animation
+- [x] `Sparkle.java` (`com.dotgears.C0202e`) - Medal glint / sparkle animation (Verified with 5-frame sequence, auto-deactivation & offset render test suite)
 - [ ] `Medal.java` (`com.dotgears.C0214k`) - Award medal renderer with sparkle timers
 - [ ] `ScoreParticle.java` (`com.dotgears.C0218o`) - Floating score indicator
 - [ ] `ScoreBoard.java` (`com.dotgears.C0219p`) - End-game results board and score counter

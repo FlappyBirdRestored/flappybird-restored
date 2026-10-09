@@ -77,6 +77,13 @@ public class Actor extends GameObject {
     }
 
     /**
+     * Alias for reset(int, int) matching C0220q.mo827a(int, int).
+     */
+    public void set(int x, int y) {
+        reset(x, y);
+    }
+
+    /**
      * Registers an animation sequence in the actor's animation table.
      * Decompiled from: C0220q.m921a
      */
