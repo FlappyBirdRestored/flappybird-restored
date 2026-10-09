@@ -29,10 +29,16 @@ public class GameEngine extends GameObject {
     /** Pre-allocated pool of 10 Sparkle objects for medal glints (decompiled from f601n). */
     public EntityPool sparkles = new EntityPool();
 
+    /** Pre-allocated pool of 20 ScoreParticle objects (decompiled from f600m). */
+    public EntityPool scoreParticles = new EntityPool();
+
     public GameEngine() {
         instance = this;
         for (int i = 0; i < 10; i++) {
             this.sparkles.add(new Sparkle());
+        }
+        for (int i = 0; i < 20; i++) {
+            this.scoreParticles.add(new ScoreParticle());
         }
     }
 

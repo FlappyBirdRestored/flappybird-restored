@@ -36,7 +36,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `Button.java` (`com.dotgears.C0203f`) - Touch UI button (bounds check, click handling, 2px pressed offset) (Verified with bounding box & click lifecycle test suite)
 - [x] `Sparkle.java` (`com.dotgears.C0202e`) - Medal glint / sparkle animation (Verified with 5-frame sequence, auto-deactivation & offset render test suite)
 - [x] `Medal.java` (`com.dotgears.C0214k`) - Award medal renderer with sparkle timers (Verified with 4-tier render, 30-tick countdown & surface sparkle test suite)
-- [ ] `ScoreParticle.java` (`com.dotgears.C0218o`) - Floating score indicator
+- [x] `ScoreParticle.java` (`com.dotgears.C0218o`) - Floating score indicator (Verified with 4-subtick gravity, lifespan, kerning & sign rendering test suite)
 - [ ] `ScoreBoard.java` (`com.dotgears.C0219p`) - End-game results board and score counter
 - [ ] `GameOverBanner.java` (`com.dotgears.flappy.C0208e`) - Drop animation for "GAME OVER"
 - [ ] `Tutorial.java` (`com.dotgears.flappy.C0209f`) - "Get Ready" and tap finger tutorial
