@@ -20,7 +20,7 @@ Any agent completing a class **MUST** update this file.
 
 ### 1. Data, Math & Utilities
 - [x] `GameMath.java` (`com.dotgears.C0213j`) - Trig lookup tables (360°), easing tables (0..100), PRNG (Verified with JUnit test suite)
-- [ ] `AtlasItem.java` (`com.dotgears.C0212i`) - Atlas coordinate entry data model
+- [x] `AtlasItem.java` (`com.dotgears.C0212i`) - Atlas coordinate entry data model (Verified with 71-sprite atlas test suite)
 - [ ] `NumberRenderer.java` (`com.dotgears.C0215l`) - Digit renderer for HUD and scores
 - [ ] `BitmapFont.java` (`com.dotgears.C0211h`) - ASCII digit font renderer
 - [ ] `FlappyFont.java` (`com.dotgears.flappy.C0205b`) - Font variant for Flappy Bird
