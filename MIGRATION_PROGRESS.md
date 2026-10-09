@@ -21,12 +21,12 @@ Any agent completing a class **MUST** update this file.
 ### 1. Data, Math & Utilities
 - [x] `GameMath.java` (`com.dotgears.C0213j`) - Trig lookup tables (360°), easing tables (0..100), PRNG (Verified with JUnit test suite)
 - [x] `AtlasItem.java` (`com.dotgears.C0212i`) - Atlas coordinate entry data model (Verified with 71-sprite atlas test suite)
-- [ ] `NumberRenderer.java` (`com.dotgears.C0215l`) - Digit renderer for HUD and scores
+- [x] `NumberRenderer.java` (`com.dotgears.C0215l`) - Digit renderer for HUD and scores (Verified with right-alignment & leading zeros test suite)
 - [ ] `BitmapFont.java` (`com.dotgears.C0211h`) - ASCII digit font renderer
 - [ ] `FlappyFont.java` (`com.dotgears.flappy.C0205b`) - Font variant for Flappy Bird
 
 ### 2. Core Entity & Animation System
-- [ ] `GameObject.java` (`com.dotgears.C0216m`) - Base entity class (`update`, `render`, active/visible)
+- [x] `GameObject.java` (`com.dotgears.C0216m`) - Base entity class (`update`, `render`, active/visible)
 - [ ] `Actor.java` (`com.dotgears.C0220q`) - Sprite entity with bounds, collision offsets, frame arrays
 - [ ] `SpriteAnimation.java` (`com.dotgears.C0201d`) - Frame sequence player
 - [ ] `Tween.java` (`com.dotgears.C0221r`) - Value interpolator using `GameMath` curves
