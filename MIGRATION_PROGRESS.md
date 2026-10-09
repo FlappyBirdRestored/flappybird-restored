@@ -27,8 +27,8 @@ Any agent completing a class **MUST** update this file.
 
 ### 2. Core Entity & Animation System
 - [x] `GameObject.java` (`com.dotgears.C0216m`) - Base entity class (`update`, `render`, active/visible)
-- [ ] `Actor.java` (`com.dotgears.C0220q`) - Sprite entity with bounds, collision offsets, frame arrays
-- [ ] `SpriteAnimation.java` (`com.dotgears.C0201d`) - Frame sequence player
+- [x] `Actor.java` (`com.dotgears.C0220q`) - Sprite entity with bounds, collision offsets, frame arrays (Verified with origin offset & render tests)
+- [x] `SpriteAnimation.java` (`com.dotgears.C0201d`) - Frame sequence player (Verified with 15ms accumulator & looping tests)
 - [ ] `Tween.java` (`com.dotgears.C0221r`) - Value interpolator using `GameMath` curves
 - [ ] `EntityPool.java` (`com.dotgears.C0217n`) - Pre-allocated fixed-size array object pool
 
