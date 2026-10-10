@@ -119,9 +119,6 @@ public class FlappyGame extends GameEngine {
         return x1 + w1 >= x2 && x1 <= x2 + w2 && y1 + h1 >= y2 && y1 <= y2 + h2;
     }
 
-    public static boolean m833a(int x1, int y1, int w1, int h1, int x2, int y2, int w2, int h2) {
-        return intersects(x1, y1, w1, h1, x2, y2, w2, h2);
-    }
 
     /**
      * Touch down event hook.
@@ -514,9 +511,5 @@ public class FlappyGame extends GameEngine {
         this.scrollSpeed = 2;
         this.pipeDelay = 1;
         this.score = 0;
-    }
-
-    public void m839e() {
-        resetGame();
     }
 }

@@ -212,9 +212,6 @@ public class GameEngine extends GameObject {
         fade(false, 0, 0.5f);
     }
 
-    public void m842a() {
-        init();
-    }
 
     /**
      * Submits a score and updates highScore if current score is greater.
@@ -228,9 +225,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m843a(int s) {
-        submitScore(s);
-    }
 
     /**
      * Camera / screen shake hook.
@@ -240,9 +234,6 @@ public class GameEngine extends GameObject {
         startShake(intensity, (int) (duration / TICK_DT));
     }
 
-    public void m844a(int intensity, float duration) {
-        shake(intensity, duration);
-    }
 
     /**
      * Triggers screen shake with given intensity and duration in ticks.
@@ -259,9 +250,6 @@ public class GameEngine extends GameObject {
     public void onPress(int x, int y) {
     }
 
-    public void mo834a(int x, int y) {
-        onPress(x, y);
-    }
 
     /**
      * Touch release / touch event hook overridden by FlappyGame.
@@ -270,9 +258,6 @@ public class GameEngine extends GameObject {
     public void onTouch(int x1, int y1, int x2, int y2) {
     }
 
-    public void mo835a(int x1, int y1, int x2, int y2) {
-        onTouch(x1, y1, x2, y2);
-    }
 
     /**
      * Delayed / animation event handler overridden by FlappyGame.
@@ -281,9 +266,6 @@ public class GameEngine extends GameObject {
     public void onEvent(int eventType, GameObject target) {
     }
 
-    public void mo836a(int eventType, GameObject target) {
-        onEvent(eventType, target);
-    }
 
     /**
      * Game logic and scene update hook overridden by FlappyGame.
@@ -292,9 +274,6 @@ public class GameEngine extends GameObject {
     public void updateGame(float dt) {
     }
 
-    public void mo837b(float dt) {
-        updateGame(dt);
-    }
 
     /**
      * Game scene initialization hook overridden by FlappyGame.
@@ -303,9 +282,6 @@ public class GameEngine extends GameObject {
     public void initGame() {
     }
 
-    public void mo838c() {
-        initGame();
-    }
 
     /**
      * Draw sprite by ID with scaling and alpha.
@@ -319,9 +295,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m845a(int spriteId, int x, int y, float scaleX, float scaleY, float alpha) {
-        draw(spriteId, x, y, scaleX, scaleY, alpha);
-    }
 
     /**
      * Primitive draw quad with texture UV and alpha.
@@ -333,9 +306,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m846a(int x1, int y1, int x2, int y2, float u1, float v1, float u2, float v2, float alpha) {
-        draw(x1, y1, x2, y2, u1, v1, u2, v2, alpha);
-    }
 
     /**
      * Primitive draw quad with texture UV, alpha, and rotation angle.
@@ -347,9 +317,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m847a(int x1, int y1, int x2, int y2, float u1, float v1, float u2, float v2, float alpha, int angle) {
-        draw(x1, y1, x2, y2, u1, v1, u2, v2, alpha, angle);
-    }
 
     /**
      * Draw sprite by ID resized to width and height with alpha.
@@ -362,9 +329,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m848a(int spriteId, int x, int y, int width, int height, float alpha) {
-        draw(spriteId, x, y, width, height, alpha);
-    }
 
     /**
      * Draw sprite item directly at (x, y) with alpha.
@@ -376,9 +340,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m850a(AtlasItem item, int x, int y, float alpha) {
-        draw(item, x, y, alpha);
-    }
 
     /**
      * Draw sprite item directly at (x, y) with alpha and rotation angle.
@@ -390,9 +351,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m851a(AtlasItem item, int x, int y, float alpha, int angle) {
-        draw(item, x, y, alpha, angle);
-    }
 
     /**
      * Posts a delayed game event or sound effect trigger.
@@ -408,9 +366,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m849a(int eventType, GameObject target, int delay) {
-        postEvent(eventType, target, delay);
-    }
 
     /**
      * Initiates fullscreen screen fade transition.
@@ -432,9 +387,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m852a(boolean fadeIn, int eventOnDone, float duration) {
-        fade(fadeIn, eventOnDone, duration);
-    }
 
     /**
      * Initiates fullscreen white screen flash transition.
@@ -449,9 +401,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m858c(float duration) {
-        flash(duration);
-    }
 
     /**
      * Copies touch coordinates from input bridge into engine buffers.
@@ -465,9 +414,6 @@ public class GameEngine extends GameObject {
         this.touchCount = 10;
     }
 
-    public void m853a(float[] xArr, float[] yArr) {
-        updateTouches(xArr, yArr);
-    }
 
     /**
      * Returns an array of AtlasItems whose names start with the given prefix.
@@ -494,9 +440,6 @@ public class GameEngine extends GameObject {
         return result;
     }
 
-    public AtlasItem[] m854a(String prefix) {
-        return getItems(prefix);
-    }
 
     /**
      * Finds the first AtlasItem whose name starts with the given prefix.
@@ -511,9 +454,6 @@ public class GameEngine extends GameObject {
         return null;
     }
 
-    public AtlasItem m855b(String prefix) {
-        return getItem(prefix);
-    }
 
     /**
      * Main engine update and render loop for each 60 Hz tick.
@@ -575,9 +515,6 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m856b() {
-        updateAndRender();
-    }
 
     /**
      * Spawns a sparkle particle at (x, y).
@@ -596,9 +533,6 @@ public class GameEngine extends GameObject {
         spawnSparkle(x, y);
     }
 
-    public void m857b(int x, int y) {
-        spawnSparkle(x, y);
-    }
 
     /**
      * Records a platform action / sound / stat event to the action buffer.
@@ -624,9 +558,6 @@ public class GameEngine extends GameObject {
         logAction(type, value);
     }
 
-    public void m859c(int type, int value) {
-        logAction(type, value);
-    }
 
     /**
      * Clears all pending delayed events from the event queue.
@@ -639,7 +570,4 @@ public class GameEngine extends GameObject {
         }
     }
 
-    public void m860d() {
-        clearEventQueue();
-    }
 }
