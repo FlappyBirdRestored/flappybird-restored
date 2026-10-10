@@ -313,6 +313,20 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
         computeViewport(width, height);
     }
 
+    public interface ActionListener {
+        void onAction(int type, double value);
+    }
+
+    private ActionListener actionListener;
+
+    public void setActionListener(ActionListener listener) {
+        this.actionListener = listener;
+    }
+
+    public ActionListener getActionListener() {
+        return this.actionListener;
+    }
+
     @Override
     public void onDrawFrame(GL10 gl) {
         // 1. Clear outer screen to black for clean pillarbox bars
@@ -328,6 +342,12 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
         // 4. Run game tick to generate quad draw commands
         if (this.engine != null) {
             this.engine.updateAndRender();
+
+            if (this.actionListener != null) {
+                for (int i = 0; i < this.engine.actionLogCount; i++) {
+                    this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
+                }
+            }
         }
 
         // 5. Draw queued quads
