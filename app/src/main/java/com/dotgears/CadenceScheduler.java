@@ -46,9 +46,13 @@ public class CadenceScheduler {
     /** Maximum time accumulated during fallback mode to prevent spiral of death. */
     public static final long MAX_FALLBACK_ACC_NS = 5L * NS_PER_TICK;
 
+    /** Number of warmup frames to skip physics ticks for after a lifecycle resume / reset. */
+    public static final int DEFAULT_WARMUP_FRAMES = 3;
+
     // Active Bresenham integer state
     private int rateHz = 60;
     private int acc = 0;
+    private int warmupFrames = 0;
 
     // Fractional time accumulator used during fallback / rate transitions
     private long timeAccumulatorNs = 0L;
@@ -81,6 +85,13 @@ public class CadenceScheduler {
     public int step(long elapsedNs) {
         // 1. Duplicate callback filter (dt < 0.5ms)
         if (elapsedNs > 0L && elapsedNs < DUPLICATE_FRAME_THRESHOLD_NS) {
+            return 0;
+        }
+
+        // 2. Warm-up frame guard after lifecycle resume / surface creation:
+        // Skips physics ticks for the first few frames to soak up unblocking bursts (0.6ms..1.5ms)
+        if (this.warmupFrames > 0) {
+            this.warmupFrames--;
             return 0;
         }
 
@@ -208,6 +219,21 @@ public class CadenceScheduler {
         this.watchdogTicks = 0;
         this.consecutiveBadWindows = 0;
         this.watchdogFallback = false;
+        this.warmupFrames = 0;
+    }
+
+    /**
+     * Triggers a temporary warm-up phase that skips physics ticks for the specified number of frames.
+     * Used on lifecycle resume and surface creation to soak up scheduling bursts without physics jerk.
+     *
+     * @param frames Number of frames to suppress physics ticks.
+     */
+    public void triggerWarmup(int frames) {
+        this.warmupFrames = Math.max(0, frames);
+    }
+
+    public int getWarmupFrames() {
+        return this.warmupFrames;
     }
 
     public int getRateHz() {

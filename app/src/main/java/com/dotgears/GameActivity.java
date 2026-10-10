@@ -158,7 +158,7 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
                     } catch (Exception ignored) {}
                 }
                 if (renderer != null) {
-                    renderer.resetTimestep();
+                    renderer.resetTimestepWithWarmup();
                 }
             }
 
@@ -322,12 +322,13 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
     protected void onResume() {
         super.onResume();
         hideSystemUI();
+        this.chLastTimestampNs = 0L;
         Choreographer.getInstance().postFrameCallback(this);
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onResume();
         }
         if (this.renderer != null) {
-            this.renderer.resetTimestep();
+            this.renderer.resetTimestepWithWarmup();
         }
         if (this.game != null) {
             this.game.paused = false;
@@ -338,6 +339,8 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
     protected void onPause() {
         super.onPause();
         Choreographer.getInstance().removeFrameCallback(this);
+        this.vsyncSampleCount = 0;
+        this.vsyncSampleIndex = 0;
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onPause();
         }
@@ -346,6 +349,17 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
         }
         if (this.game != null) {
             this.game.paused = true;
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            hideSystemUI();
+            if (this.renderer != null) {
+                this.renderer.resetTimestepWithWarmup();
+            }
         }
     }
 

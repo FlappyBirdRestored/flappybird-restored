@@ -255,5 +255,23 @@ public class GLRendererTest {
         assertEquals(0L, renderer.timeAccumulatorNs);
         assertEquals(0L, renderer.lastFrameTimeNs);
         assertEquals(0, renderer.cadenceScheduler.getAccumulator());
+        assertEquals(0, renderer.cadenceScheduler.getWarmupFrames());
+    }
+
+    @Test
+    public void testResetTimestepWithWarmupInGLRenderer() {
+        GameEngine engine = new GameEngine();
+        renderer.setEngine(engine);
+        renderer.resetTimestepWithWarmup();
+
+        assertEquals(3, renderer.cadenceScheduler.getWarmupFrames());
+
+        // 3 burst frames return 0 ticks
+        assertEquals(0, renderer.stepSimulation(800_000L));
+        assertEquals(0, renderer.stepSimulation(1_100_000L));
+        assertEquals(0, renderer.stepSimulation(1_400_000L));
+
+        // 4th frame returns steady 1 tick
+        assertEquals(1, renderer.stepSimulation(16_666_667L));
     }
 }

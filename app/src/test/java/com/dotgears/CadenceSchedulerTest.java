@@ -212,4 +212,31 @@ public class CadenceSchedulerTest {
         assertFalse(scheduler.isWatchdogFallback());
         assertFalse(scheduler.isRateChanging());
     }
+
+    @Test
+    public void testResumeBurstSoakedByWarmupGuard() {
+        scheduler.setRateHz(60);
+        scheduler.reset();
+        scheduler.triggerWarmup(3);
+        assertEquals(3, scheduler.getWarmupFrames());
+
+        // Sub-0.5ms duplicate callback drops without consuming a warmup frame
+        assertEquals(0, scheduler.step(300_000L));
+        assertEquals(3, scheduler.getWarmupFrames());
+
+        // Resume burst: 3 rapid non-duplicate callbacks (0.64ms, 0.95ms, 1.40ms)
+        // Without warmup guard, these would have generated 3 ticks!
+        // With warmup guard, they safely return 0 ticks while decremented.
+        assertEquals(0, scheduler.step(640_000L));
+        assertEquals(2, scheduler.getWarmupFrames());
+
+        assertEquals(0, scheduler.step(950_000L));
+        assertEquals(1, scheduler.getWarmupFrames());
+
+        assertEquals(0, scheduler.step(1_400_000L));
+        assertEquals(0, scheduler.getWarmupFrames());
+
+        // Frame 4: normal steady-state hardware VSync (16.67ms) resumes 1 tick execution
+        assertEquals(1, scheduler.step(16_666_667L));
+    }
 }

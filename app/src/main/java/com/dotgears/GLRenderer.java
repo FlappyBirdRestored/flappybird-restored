@@ -438,9 +438,24 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
      * Resets timing state to prevent catch-up bursts after pauses or lifecycle transitions.
      */
     public void resetTimestep() {
+        resetTimestep(false);
+    }
+
+    /**
+     * Resets timing state with a 3-frame warm-up guard to soak up scheduling bursts
+     * upon lifecycle resume, surface creation, or window focus gain.
+     */
+    public void resetTimestepWithWarmup() {
+        resetTimestep(true);
+    }
+
+    public void resetTimestep(boolean enableWarmup) {
         this.lastFrameTimeNs = 0L;
         this.timeAccumulatorNs = 0L;
         this.cadenceScheduler.reset();
+        if (enableWarmup) {
+            this.cadenceScheduler.triggerWarmup(CadenceScheduler.DEFAULT_WARMUP_FRAMES);
+        }
         this.suppressAnomalyFrames = 30; // Suppress anomaly detector for 30 frames after reset/resume
         this.diagWindowStartNs = 0L;
         this.diagRenderFrames = 0;
