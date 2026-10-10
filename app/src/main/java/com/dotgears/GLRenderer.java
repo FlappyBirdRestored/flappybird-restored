@@ -155,8 +155,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public long lastAnomalyDumpFrame = -100L;
     public int anomalyFlashFrames = 0;
 
-    // 120 Hz integer step counter (alternates 0 and 1 tick per frame with zero float remainder)
-    public int stepCounter120Hz = 0;
+    // Rate-aware Bresenham integer cadence scheduler
+    public final CadenceScheduler cadenceScheduler = new CadenceScheduler(60);
 
     // Anomaly suppression frames after resume / reset to ignore lifecycle transitions (default 30 frames)
     public int suppressAnomalyFrames = 30;
@@ -389,7 +389,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
 
     /**
      * Updates detected display refresh rate from the window manager.
-     * Automatically resets the timestep if a dynamic mode switch is detected (e.g. LTPO transitions).
+     * Automatically proposes rate changes to the CadenceScheduler with 0.5s stability hysteresis.
      */
     public void updateDisplayRefreshRate(Context ctx) {
         if (ctx == null) {
@@ -401,20 +401,28 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
                 Display display = wm.getDefaultDisplay();
                 if (display != null) {
                     float rate = display.getRefreshRate();
-                    if (rate > 20.0f && rate < 300.0f) {
-                        if (Math.abs(this.displayRefreshRate - rate) > 1.0f) {
-                            this.displayRefreshRate = rate;
-                            resetTimestep();
-                        }
+                    if (rate > 20.0f && rate < 360.0f) {
+                        int snapped = CadenceScheduler.snapToStandardRefreshRate(Math.round(rate));
+                        this.displayRefreshRate = (float) snapped;
+                        this.cadenceScheduler.proposeRateHz(snapped);
                     }
                 }
             }
         } catch (Exception ignored) {}
     }
 
+    /**
+     * Proposes a hardware VSync rate measured directly from Choreographer intervals.
+     */
+    public void proposeHardwareRate(int rateHz) {
+        this.cadenceScheduler.proposeRateHz(rateHz);
+        this.displayRefreshRate = (float) this.cadenceScheduler.getRateHz();
+    }
+
     public void setDisplayRefreshRate(float rate) {
-        if (rate > 20.0f && rate < 300.0f) {
+        if (rate > 20.0f && rate < 360.0f) {
             this.displayRefreshRate = rate;
+            this.cadenceScheduler.setRateHz(Math.round(rate));
         }
     }
 
@@ -432,7 +440,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public void resetTimestep() {
         this.lastFrameTimeNs = 0L;
         this.timeAccumulatorNs = 0L;
-        this.stepCounter120Hz = 0;
+        this.cadenceScheduler.reset();
         this.suppressAnomalyFrames = 30; // Suppress anomaly detector for 30 frames after reset/resume
         this.diagWindowStartNs = 0L;
         this.diagRenderFrames = 0;
@@ -451,16 +459,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     }
 
     /**
-     * Advances the engine simulation using the 1-tick-per-frame architecture.
-     * At 60 Hz:
-     * - dt < 3.0ms: returns 0 ticks (filters resume burst or duplicate callbacks).
-     * - 3.0ms <= dt <= 41.7ms: returns exactly 1 tick, cleanly absorbing all Linux CFS scheduler jitter
-     *   without accumulating any fractional remainder debt across frames.
-     * - dt > 41.7ms: real multi-frame stall catch-up (> 2.5 frames), clamped to at most 4 ticks.
-     *
-     * At 120 Hz:
-     * - Alternates 0 ticks and 1 tick per frame using an integer step counter (60 ticks/s at 120 FPS)
-     *   with zero floating-point remainder.
+     * Advances the engine simulation using the rate-aware Bresenham cadence scheduler.
+     * Decouples fixed 60 Hz physics from any arbitrary display refresh rate (60Hz, 90Hz, 120Hz, 144Hz, 240Hz, <60Hz)
+     * with zero floating-point remainder drift, 0.5ms duplicate wake filtering, 41.7ms stall clamping,
+     * and a fail-safe 1-second tick watchdog.
      *
      * @param elapsedNs Elapsed real time in nanoseconds since last step.
      * @return Number of 60 Hz ticks simulated.
@@ -468,26 +470,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public int stepSimulation(long elapsedNs) {
         Trace.beginSection("FlappyUpdate");
         try {
-            int ticks;
-            if (is120Hz()) {
-                if (elapsedNs < 3_000_000L) {
-                    ticks = 0; // Resume burst
-                } else if (elapsedNs > 25_000_000L) {
-                    ticks = (int) Math.min(4, Math.round((double) elapsedNs / (double) NS_PER_TICK));
-                } else {
-                    ticks = this.stepCounter120Hz;
-                    this.stepCounter120Hz = (this.stepCounter120Hz + 1) & 1;
-                }
-            } else {
-                if (elapsedNs < 3_000_000L) {
-                    ticks = 0; // Resume burst or duplicate callback (< 3ms)
-                } else if (elapsedNs > 41_700_000L) {
-                    ticks = (int) Math.min(4, Math.round((double) elapsedNs / (double) NS_PER_TICK)); // Real multi-frame stall (> 41.7ms = 2.5 frames)
-                } else {
-                    ticks = 1; // Pure 1-tick-per-frame: absorbs 3.0ms..41.7ms jitter with zero remainder
-                }
-            }
-
+            int ticks = this.cadenceScheduler.step(elapsedNs);
             return executeSimulationTicks(ticks);
         } finally {
             Trace.endSection();
@@ -630,11 +613,13 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
 
             Log.i(PERF_TAG, String.format(Locale.US,
                     "FPS: %.1f | Ticks/s: %.1f | Cadence: [0:%d, 1:%d, 2:%d, 3+:%d] (Anomalies: %d) | " +
-                    "Frame(ms): avg=%.2f, min=%.2f, max=%.2f | MaxUpdate: %.2fms | MaxRender: %.2fms | Display: %.1fHz",
+                    "Frame(ms): avg=%.2f, min=%.2f, max=%.2f | MaxUpdate: %.2fms | MaxRender: %.2fms | " +
+                    "Display: %.1fHz (Cadence: %dHz, Fallback: %b)",
                     fps, ticksPerSec,
                     this.diagFrames0Ticks, this.diagFrames1Tick, this.diagFrames2Ticks, this.diagFrames3PlusTicks,
                     non1TickFrames,
-                    avgFrameMs, minFrameMs, maxFrameMs, maxUpdateMs, maxRenderMs, this.displayRefreshRate));
+                    avgFrameMs, minFrameMs, maxFrameMs, maxUpdateMs, maxRenderMs,
+                    this.displayRefreshRate, this.cadenceScheduler.getRateHz(), this.cadenceScheduler.isWatchdogFallback()));
 
             // Reset diagnostic counters for next window
             this.diagWindowStartNs = now;
@@ -679,18 +664,24 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             this.suppressAnomalyFrames--;
         }
 
-        // Anomaly detection: fire on ticksRun != 1 during gameplay, outside suppression and cooldown
+        // Anomaly detection: fire outside suppression and cooldown
         if (this.suppressAnomalyFrames == 0 && (frameIndex - this.lastAnomalyDumpFrame > 30) && this.anomalyDumpCountdown < 0) {
             boolean isAnomaly = false;
+            int cadenceRate = this.cadenceScheduler.getRateHz();
 
-            if (is120Hz()) {
-                // At 120Hz, normal cadence alternates 0 and 1; a stall (> 1 tick) is an anomaly
+            if (cadenceRate == 60) {
+                // At 60Hz: any frame with ticksRun != 1 during gameplay is an anomaly!
+                if (ticksRun != 1) {
+                    isAnomaly = true;
+                }
+            } else if (cadenceRate > 60) {
+                // At high refresh rates (90, 120, 144Hz): normal cadence is 0 or 1; ticksRun > 1 is a stall anomaly
                 if (ticksRun > 1) {
                     isAnomaly = true;
                 }
             } else {
-                // At 60Hz: any frame with ticksRun != 1 during gameplay is an anomaly!
-                if (ticksRun != 1) {
+                // At low rates (< 60Hz, e.g. 30Hz): normal cadence is 2 ticks; ticksRun > 2 is a stall
+                if (ticksRun > 2) {
                     isAnomaly = true;
                 }
             }

@@ -216,14 +216,32 @@ public class GLRendererTest {
     }
 
     @Test
-    public void testSub3msBurstIgnoredAt60Hz() {
+    public void testDuplicateWakeIgnored() {
         GameEngine engine = new GameEngine();
         renderer.setEngine(engine);
         renderer.resetTimestep();
 
-        // Sub-3ms burst (e.g. surface creation duplicate wake) runs 0 ticks
-        int ticks = renderer.stepSimulation(1_500_000L);
+        // Sub-0.5ms duplicate callback (e.g. spurious wake) runs 0 ticks
+        int ticks = renderer.stepSimulation(200_000L);
         assertEquals(0, ticks);
+    }
+
+    @Test
+    public void testCadenceAt120HzInGLRenderer() {
+        GameEngine engine = new GameEngine();
+        renderer.setEngine(engine);
+        renderer.setDisplayRefreshRate(120.0f);
+        renderer.resetTimestep();
+
+        int tick0 = renderer.stepSimulation(8_333_333L);
+        int tick1 = renderer.stepSimulation(8_333_333L);
+        int tick2 = renderer.stepSimulation(8_333_333L);
+        int tick3 = renderer.stepSimulation(8_333_333L);
+
+        assertEquals(0, tick0);
+        assertEquals(1, tick1);
+        assertEquals(0, tick2);
+        assertEquals(1, tick3);
     }
 
     @Test
@@ -236,5 +254,6 @@ public class GLRendererTest {
         assertEquals(0, renderer.anomalyFlashFrames);
         assertEquals(0L, renderer.timeAccumulatorNs);
         assertEquals(0L, renderer.lastFrameTimeNs);
+        assertEquals(0, renderer.cadenceScheduler.getAccumulator());
     }
 }

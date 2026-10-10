@@ -23,6 +23,7 @@ import com.dotgears.flappy.FlappyGame;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Arrays;
 import java.util.Locale;
 
 /**
@@ -49,6 +50,13 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
     private final long[] chDtNs = new long[CH_RING_SIZE];
     private long chTotalFrames = 0L;
     private long chLastTimestampNs = 0L;
+
+    // Median Choreographer interval tracker (Zero GC)
+    private static final int RATE_SAMPLES = 31;
+    private final long[] vsyncSamples = new long[RATE_SAMPLES];
+    private final long[] sortBuffer = new long[RATE_SAMPLES];
+    private int vsyncSampleIndex = 0;
+    private int vsyncSampleCount = 0;
 
     public GLSurfaceView glSurfaceView;
     public GLRenderer renderer;
@@ -350,6 +358,29 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
         this.chFrameIndex[slot] = idx;
         this.chTimestampNs[slot] = frameTimeNanos;
         this.chDtNs[slot] = dt;
+
+        // Collect legitimate frame intervals (2ms to 100ms) to compute running median
+        if (dt > 2_000_000L && dt < 100_000_000L) {
+            this.vsyncSamples[this.vsyncSampleIndex] = dt;
+            this.vsyncSampleIndex = (this.vsyncSampleIndex + 1) % RATE_SAMPLES;
+            if (this.vsyncSampleCount < RATE_SAMPLES) {
+                this.vsyncSampleCount++;
+            }
+
+            // Every 16 frames, compute median and propose rate to GL renderer
+            if (this.vsyncSampleCount >= RATE_SAMPLES && (this.vsyncSampleIndex % 16 == 0)) {
+                System.arraycopy(this.vsyncSamples, 0, this.sortBuffer, 0, RATE_SAMPLES);
+                Arrays.sort(this.sortBuffer);
+                long medianDtNs = this.sortBuffer[RATE_SAMPLES / 2];
+                if (medianDtNs > 0L) {
+                    double rate = 1_000_000_000.0 / (double) medianDtNs;
+                    int detectedHz = CadenceScheduler.snapToStandardRefreshRate((int) Math.round(rate));
+                    if (this.renderer != null) {
+                        this.renderer.proposeHardwareRate(detectedHz);
+                    }
+                }
+            }
+        }
 
         Choreographer.getInstance().postFrameCallback(this);
     }
