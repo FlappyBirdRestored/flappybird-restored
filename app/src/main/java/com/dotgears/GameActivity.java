@@ -98,6 +98,7 @@ public class GameActivity extends Activity {
 
         GameEngine.instance = this.game;
         this.game.init();
+        GameMath.randomize((int) System.currentTimeMillis());
     }
 
     private void initGLSurfaceView() {

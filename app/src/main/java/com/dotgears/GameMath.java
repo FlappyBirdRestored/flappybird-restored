@@ -167,8 +167,15 @@ public class GameMath {
      */
     public static void randomize(int seed) {
         Log.i("FlappyBird", "Engine: Randomize " + seed);
-        mwcY = seed % 32000;
-        mwcZ = seed % 65535;
+        // safeSeed: Modernization fix for 32-bit timestamp overflow.
+        // In original 2014 APK (com.dotgears.j.a), this was: mwcY = seed % 32000; mwcZ = seed % 65535;
+        // In 2026+, (int) System.currentTimeMillis() overflows 32-bit signed int into negative values.
+        // In Java, remainder operator (%) retains negative signs, which corrupts Marsaglia's MWC PRNG
+        // due to arithmetic sign-extension during right shifts (>> 16).
+        // Taking Math.abs(seed) guarantees non-negative operands while strictly preserving Dong Nguyen's modulo formulas.
+        int safeSeed = Math.abs(seed);
+        mwcY = safeSeed % 32000;
+        mwcZ = safeSeed % 65535;
     }
 
     /**

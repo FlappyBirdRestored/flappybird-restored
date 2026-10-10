@@ -189,6 +189,7 @@ public class GameEngine extends GameObject {
      */
     public void init() {
         GameMath.instance = new GameMath();
+        GameMath.randomize((int) System.currentTimeMillis());
         this.fadeTween = new Tween();
         this.flashTween = new Tween();
         this.blackSprite = getItem("black");
