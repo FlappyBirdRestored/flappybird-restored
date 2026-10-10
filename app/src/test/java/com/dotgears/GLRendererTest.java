@@ -148,7 +148,7 @@ public class GLRendererTest {
     }
 
     @Test
-    public void testFixedTimestepAccumulatorAt60Hz() {
+    public void testFixedTimestepAt60Hz() {
         GameEngine engine = new GameEngine();
         renderer.setEngine(engine);
         renderer.resetTimestep();
@@ -156,11 +156,10 @@ public class GLRendererTest {
         // Stepping exactly 16.666ms (1 tick) simulates 1 tick
         int ticks = renderer.stepSimulation(GLRenderer.NS_PER_TICK);
         assertEquals(1, ticks);
-        assertEquals(0L, renderer.timeAccumulatorNs);
     }
 
     @Test
-    public void testFixedTimestepAccumulatorAt120Hz() {
+    public void testFixedTimestepAt120Hz() {
         GameEngine engine = new GameEngine();
         renderer.setEngine(engine);
         renderer.setDisplayRefreshRate(120.0f);
@@ -168,15 +167,13 @@ public class GLRendererTest {
 
         long halfTick = GLRenderer.NS_PER_TICK / 2L;
 
-        // Frame 1 (8.33ms): accumulator has 8.33ms < 16.66ms -> 0 ticks
+        // Frame 1 (8.33ms): stepCounter toggles to 0 -> 0 ticks
         int ticks1 = renderer.stepSimulation(halfTick);
         assertEquals(0, ticks1);
-        assertEquals(halfTick, renderer.timeAccumulatorNs);
 
-        // Frame 2 (8.33ms): accumulator reaches 16.66ms -> exactly 1 tick
+        // Frame 2 (8.33ms): stepCounter toggles to 1 -> 1 tick (60 ticks/s total)
         int ticks2 = renderer.stepSimulation(halfTick);
         assertEquals(1, ticks2);
-        assertEquals(0L, renderer.timeAccumulatorNs);
     }
 
     @Test
@@ -186,74 +183,47 @@ public class GLRendererTest {
         renderer.setDisplayRefreshRate(60.0f);
         renderer.resetTimestep();
 
-        // 16.2 ms (woke up 0.46ms early due to Linux scheduler variance)
-        // Snaps to NS_PER_TICK so it runs exactly 1 tick instead of 0 ticks (eliminating micro-stutter)
-        long jitterEarlyNs = 16_200_000L;
-        int ticks1 = renderer.stepSimulation(jitterEarlyNs);
+        // Early wake (16.2 ms) runs exactly 1 tick
+        int ticks1 = renderer.stepSimulation(16_200_000L);
         assertEquals(1, ticks1);
-        assertEquals(0L, renderer.timeAccumulatorNs);
 
-        // 17.1 ms (woke up 0.43ms late)
-        // Snaps to NS_PER_TICK so it runs exactly 1 tick instead of 2 ticks
-        long jitterLateNs = 17_100_000L;
-        int ticks2 = renderer.stepSimulation(jitterLateNs);
+        // Late wake (17.1 ms) runs exactly 1 tick
+        int ticks2 = renderer.stepSimulation(17_100_000L);
         assertEquals(1, ticks2);
-        assertEquals(0L, renderer.timeAccumulatorNs);
+
+        // Extreme late wake (29.58 ms) cleanly runs exactly 1 tick (zero remainder debt)
+        int ticks3 = renderer.stepSimulation(29_580_000L);
+        assertEquals(1, ticks3);
+
+        // Extreme early wake (5.82 ms) cleanly runs exactly 1 tick
+        int ticks4 = renderer.stepSimulation(5_820_000L);
+        assertEquals(1, ticks4);
     }
 
     @Test
-    public void testFixedTimestepAccumulatorAt30HzOrDrop() {
+    public void testMultiFrameStallCatchUpAt60Hz() {
         GameEngine engine = new GameEngine();
         renderer.setEngine(engine);
         renderer.resetTimestep();
 
-        // Frame drop of 33.33ms (2 ticks) simulates exactly 2 ticks
-        int ticks = renderer.stepSimulation(GLRenderer.NS_PER_TICK * 2L);
-        assertEquals(2, ticks);
-        assertEquals(0L, renderer.timeAccumulatorNs);
+        // Frame stall of 50ms (> 41.7ms) simulates 3 ticks
+        int ticks = renderer.stepSimulation(50_000_000L);
+        assertEquals(3, ticks);
+
+        // Extreme pause (10 seconds) clamped to maximum 4 ticks
+        int clampedTicks = renderer.stepSimulation(10_000_000_000L);
+        assertEquals(4, clampedTicks);
     }
 
     @Test
-    public void testSpiralOfDeathClamping() {
+    public void testSub3msBurstIgnoredAt60Hz() {
         GameEngine engine = new GameEngine();
         renderer.setEngine(engine);
         renderer.resetTimestep();
 
-        // 10 second delay (e.g. app freeze / debugger pause) clamped to MAX_ELAPSED_NS (5 ticks)
-        int ticks = renderer.stepSimulation(10_000_000_000L);
-        assertEquals(5, ticks);
-        assertEquals(0L, renderer.timeAccumulatorNs);
-    }
-
-    @Test
-    public void testResetTimestepClearsAccumulator() {
-        renderer.stepSimulation(GLRenderer.NS_PER_TICK / 2L);
-        assertTrue(renderer.timeAccumulatorNs > 0L);
-
-        renderer.resetTimestep();
-        assertEquals(0L, renderer.timeAccumulatorNs);
-        assertEquals(0L, renderer.lastFrameTimeNs);
-    }
-
-    @Test
-    public void testVsyncSnappingAt144Hz() {
-        renderer.setDisplayRefreshRate(144.0f);
-        renderer.resetTimestep();
-
-        long expected144HzPeriod = (long) (1_000_000_000.0 / 144.0); // ~6,944,444 ns
-        // Jitter frame arriving at 6.8 ms (within tolerance of 6.944 ms) snaps to expected period
-        long snapped = renderer.snapElapsedToVsync(6_800_000L);
-        assertEquals(expected144HzPeriod, snapped);
-    }
-
-    @Test
-    public void testVsyncSnappingDroppedFrameAt60Hz() {
-        renderer.setDisplayRefreshRate(60.0f);
-        renderer.resetTimestep();
-
-        // Single dropped frame on 60 Hz display arriving at 33.0 ms snaps to exactly 2 ticks (33.333 ms)
-        long snapped = renderer.snapElapsedToVsync(33_000_000L);
-        assertEquals(GLRenderer.NS_PER_TICK * 2L, snapped);
+        // Sub-3ms burst (e.g. surface creation duplicate wake) runs 0 ticks
+        int ticks = renderer.stepSimulation(1_500_000L);
+        assertEquals(0, ticks);
     }
 
     @Test

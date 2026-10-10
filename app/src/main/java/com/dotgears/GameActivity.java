@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.hardware.display.DisplayManager;
 import android.net.Uri;
 import android.opengl.GLSurfaceView;
 import android.os.Build;
@@ -12,6 +13,8 @@ import android.util.Log;
 import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -30,7 +33,7 @@ import java.util.Locale;
  * - Bridges multi-touch input to virtual 288x512 coordinates.
  * - Handles audio playback and offline SharedPreferences high-score persistence.
  */
-public class GameActivity extends Activity implements Choreographer.FrameCallback {
+public class GameActivity extends Activity implements Choreographer.FrameCallback, DisplayManager.DisplayListener {
 
     public static final String TAG = "FlappyBird";
     public static final String PREFS_NAME = "FlappyBird";
@@ -69,6 +72,12 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
             WindowManager.LayoutParams params = getWindow().getAttributes();
             params.preferredRefreshRate = 60.0f;
             getWindow().setAttributes(params);
+        }
+
+        // Listen for immediate dynamic display refresh rate switches (e.g. 60Hz <-> 120Hz)
+        DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        if (dm != null) {
+            dm.registerDisplayListener(this, null);
         }
 
         // Immersive sticky full screen navigation hide
@@ -130,6 +139,31 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
         this.renderer = new GLRenderer(this, this.game);
         this.glSurfaceView.setRenderer(this.renderer);
         this.glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+
+        // Lock surface to 60 Hz on Android 11+ (API 30+) to suppress touch boost rate transitions
+        this.glSurfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        holder.getSurface().setFrameRate(60.0f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+                    } catch (Exception ignored) {}
+                }
+                if (renderer != null) {
+                    renderer.resetTimestep();
+                }
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                if (renderer != null) {
+                    renderer.resetTimestep();
+                }
+            }
+        });
 
         // Action queue listener to handle audio, scores, and links from the game loop
         this.renderer.setActionListener(new GLRenderer.ActionListener() {
@@ -299,6 +333,9 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onPause();
         }
+        if (this.renderer != null) {
+            this.renderer.resetTimestep();
+        }
         if (this.game != null) {
             this.game.paused = true;
         }
@@ -355,9 +392,28 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
         }
     }
 
+    // --- DisplayManager.DisplayListener Implementation ---
+
+    @Override
+    public void onDisplayAdded(int displayId) {}
+
+    @Override
+    public void onDisplayRemoved(int displayId) {}
+
+    @Override
+    public void onDisplayChanged(int displayId) {
+        if (this.renderer != null) {
+            this.renderer.updateDisplayRefreshRate(this);
+        }
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        DisplayManager dm = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+        if (dm != null) {
+            dm.unregisterDisplayListener(this);
+        }
         if (this.audioManager != null) {
             this.audioManager.release();
         }

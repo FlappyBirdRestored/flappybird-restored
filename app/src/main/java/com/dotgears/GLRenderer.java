@@ -155,6 +155,12 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public long lastAnomalyDumpFrame = -100L;
     public int anomalyFlashFrames = 0;
 
+    // 120 Hz integer step counter (alternates 0 and 1 tick per frame with zero float remainder)
+    public int stepCounter120Hz = 0;
+
+    // Anomaly suppression frames after resume / reset to ignore lifecycle transitions (default 30 frames)
+    public int suppressAnomalyFrames = 30;
+
     public GLRenderer() {
         initBuffers();
     }
@@ -416,12 +422,18 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
         return this.displayRefreshRate;
     }
 
+    public boolean is120Hz() {
+        return Math.abs(this.displayRefreshRate - 120.0f) <= 10.0f;
+    }
+
     /**
-     * Resets the fixed-timestep accumulator to prevent catch-up bursts after pauses or lifecycle transitions.
+     * Resets timing state to prevent catch-up bursts after pauses or lifecycle transitions.
      */
     public void resetTimestep() {
         this.lastFrameTimeNs = 0L;
         this.timeAccumulatorNs = 0L;
+        this.stepCounter120Hz = 0;
+        this.suppressAnomalyFrames = 30; // Suppress anomaly detector for 30 frames after reset/resume
         this.diagWindowStartNs = 0L;
         this.diagRenderFrames = 0;
         this.diagPhysicsTicks = 0;
@@ -439,58 +451,16 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     }
 
     /**
-     * Snaps elapsed frame time to the nearest integer multiple of the display's VSync interval
-     * if within scheduler jitter tolerance.
-     * Handles any display refresh rate (e.g. 60Hz, 75Hz, 90Hz, 120Hz, 144Hz, 165Hz, 240Hz)
-     * and prevents beat-frequency accumulator aliasing (alternating 0-tick and 2-tick micro-stutters)
-     * caused by OS thread scheduling variations on VSync-locked displays.
-     */
-    public long snapElapsedToVsync(long elapsedNs) {
-        float rate = this.displayRefreshRate;
-        if (rate < 20.0f) {
-            rate = 60.0f;
-        }
-
-        // Calculate the base hardware VSync period in nanoseconds
-        long vsyncPeriodNs;
-        if (Math.abs(rate - 60.0f) <= 3.0f) {
-            // ~60 Hz display: perfectly align with 60 Hz simulation tick
-            vsyncPeriodNs = NS_PER_TICK;
-        } else if (Math.abs(rate - 120.0f) <= 5.0f) {
-            // ~120 Hz display: exactly half of a 60 Hz simulation tick (8.333 ms)
-            vsyncPeriodNs = NS_PER_TICK / 2L;
-        } else if (Math.abs(rate - 180.0f) <= 5.0f) {
-            // ~180 Hz display: exactly one third of a 60 Hz simulation tick (5.555 ms)
-            vsyncPeriodNs = NS_PER_TICK / 3L;
-        } else if (Math.abs(rate - 240.0f) <= 5.0f) {
-            // ~240 Hz display: exactly one fourth of a 60 Hz simulation tick (4.166 ms)
-            vsyncPeriodNs = NS_PER_TICK / 4L;
-        } else {
-            // Generic display rate (e.g. 75 Hz, 90 Hz, 144 Hz, 165 Hz)
-            vsyncPeriodNs = (long) (1_000_000_000.0 / rate);
-        }
-
-        if (vsyncPeriodNs <= 0L) {
-            return elapsedNs;
-        }
-
-        // Tolerance for Linux scheduler variance: 25% of frame duration, clamped between 1.5ms and 4.0ms
-        long toleranceNs = Math.min(4_000_000L, Math.max(1_500_000L, vsyncPeriodNs / 4L));
-
-        // Find the nearest multiple of VSync (1 frame, or 2..4 dropped frames)
-        int vsyncCount = (int) Math.round((double) elapsedNs / (double) vsyncPeriodNs);
-        if (vsyncCount >= 1 && vsyncCount <= 4) {
-            long expectedNs = vsyncCount * vsyncPeriodNs;
-            if (Math.abs(elapsedNs - expectedNs) <= toleranceNs) {
-                return expectedNs;
-            }
-        }
-
-        return elapsedNs;
-    }
-
-    /**
-     * Advances the engine simulation using the fixed 60 Hz timestep accumulator.
+     * Advances the engine simulation using the 1-tick-per-frame architecture.
+     * At 60 Hz:
+     * - dt < 3.0ms: returns 0 ticks (filters resume burst or duplicate callbacks).
+     * - 3.0ms <= dt <= 41.7ms: returns exactly 1 tick, cleanly absorbing all Linux CFS scheduler jitter
+     *   without accumulating any fractional remainder debt across frames.
+     * - dt > 41.7ms: real multi-frame stall catch-up (> 2.5 frames), clamped to at most 4 ticks.
+     *
+     * At 120 Hz:
+     * - Alternates 0 ticks and 1 tick per frame using an integer step counter (60 ticks/s at 120 FPS)
+     *   with zero floating-point remainder.
      *
      * @param elapsedNs Elapsed real time in nanoseconds since last step.
      * @return Number of 60 Hz ticks simulated.
@@ -498,39 +468,54 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public int stepSimulation(long elapsedNs) {
         Trace.beginSection("FlappyUpdate");
         try {
-            long effectiveNs = snapElapsedToVsync(elapsedNs);
-            if (effectiveNs < 0L) {
-                effectiveNs = 0L;
-            } else if (effectiveNs > MAX_ELAPSED_NS) {
-                effectiveNs = MAX_ELAPSED_NS;
-            }
-            this.timeAccumulatorNs += effectiveNs;
-
-            int ticksRun = 0;
-            if (this.engine != null) {
-                while (this.timeAccumulatorNs >= NS_PER_TICK) {
-                    this.quadCount = 0;
-                    long updateStartNs = System.nanoTime();
-                    this.engine.updateAndRender();
-                    long updateDurationNs = System.nanoTime() - updateStartNs;
-                    if (updateDurationNs > this.diagMaxUpdateNs) {
-                        this.diagMaxUpdateNs = updateDurationNs;
-                    }
-
-                    if (this.actionListener != null) {
-                        for (int i = 0; i < this.engine.actionLogCount; i++) {
-                            this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
-                        }
-                    }
-
-                    this.timeAccumulatorNs -= NS_PER_TICK;
-                    ticksRun++;
+            int ticks;
+            if (is120Hz()) {
+                if (elapsedNs < 3_000_000L) {
+                    ticks = 0; // Resume burst
+                } else if (elapsedNs > 25_000_000L) {
+                    ticks = (int) Math.min(4, Math.round((double) elapsedNs / (double) NS_PER_TICK));
+                } else {
+                    ticks = this.stepCounter120Hz;
+                    this.stepCounter120Hz = (this.stepCounter120Hz + 1) & 1;
+                }
+            } else {
+                if (elapsedNs < 3_000_000L) {
+                    ticks = 0; // Resume burst or duplicate callback (< 3ms)
+                } else if (elapsedNs > 41_700_000L) {
+                    ticks = (int) Math.min(4, Math.round((double) elapsedNs / (double) NS_PER_TICK)); // Real multi-frame stall (> 41.7ms = 2.5 frames)
+                } else {
+                    ticks = 1; // Pure 1-tick-per-frame: absorbs 3.0ms..41.7ms jitter with zero remainder
                 }
             }
-            return ticksRun;
+
+            return executeSimulationTicks(ticks);
         } finally {
             Trace.endSection();
         }
+    }
+
+    /**
+     * Executes the given number of simulation ticks and captures performance metrics.
+     */
+    public int executeSimulationTicks(int ticks) {
+        if (this.engine != null) {
+            for (int t = 0; t < ticks; t++) {
+                this.quadCount = 0;
+                long updateStartNs = System.nanoTime();
+                this.engine.updateAndRender();
+                long updateDurationNs = System.nanoTime() - updateStartNs;
+                if (updateDurationNs > this.diagMaxUpdateNs) {
+                    this.diagMaxUpdateNs = updateDurationNs;
+                }
+
+                if (this.actionListener != null) {
+                    for (int i = 0; i < this.engine.actionLogCount; i++) {
+                        this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
+                    }
+                }
+            }
+        }
+        return ticks;
     }
 
     @Override
@@ -553,13 +538,14 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             // 3. Set pillarboxed viewport for virtual canvas
             GLES20.glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
 
-            // 4. Fixed-timestep accumulator: decouple 60 Hz physics from display refresh rate
+            // 4. Fixed 60 Hz simulation pacing
             int ticksRun = 0;
             long elapsed = 0L;
             if (this.lastFrameTimeNs == 0L) {
                 this.lastFrameTimeNs = frameStartNs;
-                // Prime accumulator on first frame to ensure initial scene quads are generated
-                ticksRun = stepSimulation(NS_PER_TICK);
+                this.suppressAnomalyFrames = 30;
+                // Prime simulation on first frame to ensure initial scene quads are generated
+                ticksRun = executeSimulationTicks(1);
             } else {
                 elapsed = frameStartNs - this.lastFrameTimeNs;
                 this.lastFrameTimeNs = frameStartNs;
@@ -624,8 +610,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             this.diagMaxRenderNs = renderDurationNs;
         }
 
-        // Hitch warning for frames longer than 25ms (dropped 60Hz frame or 2x 120Hz frames)
-        if (elapsedNs > 25_000_000L && this.diagRenderFrames > 10) {
+        // Hitch warning for frames longer than 41.7ms (true multi-frame stall)
+        if (elapsedNs > 41_700_000L && this.diagRenderFrames > 10) {
             Log.w(PERF_TAG, "Hitch: frame=" + (elapsedNs / 1_000_000.0f) + "ms, ticks=" + ticksRun);
         }
 
@@ -640,12 +626,14 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             float maxFrameMs = this.diagMaxFrameNs / 1_000_000.0f;
             float maxUpdateMs = this.diagMaxUpdateNs / 1_000_000.0f;
             float maxRenderMs = this.diagMaxRenderNs / 1_000_000.0f;
+            int non1TickFrames = this.diagFrames0Ticks + this.diagFrames2Ticks + this.diagFrames3PlusTicks;
 
             Log.i(PERF_TAG, String.format(Locale.US,
-                    "FPS: %.1f | Ticks/s: %.1f | Cadence: [0:%d, 1:%d, 2:%d, 3+:%d] | " +
+                    "FPS: %.1f | Ticks/s: %.1f | Cadence: [0:%d, 1:%d, 2:%d, 3+:%d] (Anomalies: %d) | " +
                     "Frame(ms): avg=%.2f, min=%.2f, max=%.2f | MaxUpdate: %.2fms | MaxRender: %.2fms | Display: %.1fHz",
                     fps, ticksPerSec,
                     this.diagFrames0Ticks, this.diagFrames1Tick, this.diagFrames2Ticks, this.diagFrames3PlusTicks,
+                    non1TickFrames,
                     avgFrameMs, minFrameMs, maxFrameMs, maxUpdateMs, maxRenderMs, this.displayRefreshRate));
 
             // Reset diagnostic counters for next window
@@ -675,7 +663,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
         this.ringTimestampNs[slot] = frameStartNs;
         this.ringDtNs[slot] = elapsedNs;
         this.ringTicksRun[slot] = ticksRun;
-        this.ringRemainderNs[slot] = this.timeAccumulatorNs;
+        this.ringRemainderNs[slot] = 0L;
 
         // Anomaly dump countdown handler: triggers dump exactly 10 frames after the anomaly
         if (this.anomalyDumpCountdown > 0) {
@@ -686,19 +674,25 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             }
         }
 
-        // Anomaly detection (after initial 30 frames warm-up and 30-frame debounce)
-        if (this.totalGlFrames > 30 && (frameIndex - this.lastAnomalyDumpFrame > 30) && this.anomalyDumpCountdown < 0) {
+        // Countdown suppression after resume / surface creation
+        if (this.suppressAnomalyFrames > 0) {
+            this.suppressAnomalyFrames--;
+        }
+
+        // Anomaly detection: fire on ticksRun != 1 during gameplay, outside suppression and cooldown
+        if (this.suppressAnomalyFrames == 0 && (frameIndex - this.lastAnomalyDumpFrame > 30) && this.anomalyDumpCountdown < 0) {
             boolean isAnomaly = false;
 
-            // Condition 1: Physics tick count is not 1 on a ~60Hz target
-            if (ticksRun != 1) {
-                isAnomaly = true;
-            }
-
-            // Condition 2: Frame delta deviates significantly from VSync period (e.g. > 22ms or < 11ms at 60Hz)
-            long vsyncNs = (long) (1_000_000_000.0 / (this.displayRefreshRate > 20f ? this.displayRefreshRate : 60f));
-            if (vsyncNs > 0L && Math.abs(elapsedNs - vsyncNs) > (vsyncNs * 0.35f)) {
-                isAnomaly = true;
+            if (is120Hz()) {
+                // At 120Hz, normal cadence alternates 0 and 1; a stall (> 1 tick) is an anomaly
+                if (ticksRun > 1) {
+                    isAnomaly = true;
+                }
+            } else {
+                // At 60Hz: any frame with ticksRun != 1 during gameplay is an anomaly!
+                if (ticksRun != 1) {
+                    isAnomaly = true;
+                }
             }
 
             if (isAnomaly) {
@@ -708,7 +702,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
                 this.anomalyFlashFrames = 10;   // Flash visual red badge for 10 frames (~160ms)
                 Log.w(TRACE_TAG, "!!! ANOMALY DETECTED at GL frame #" + frameIndex +
                         " | dt=" + (elapsedNs / 1_000_000.0f) + "ms | ticks=" + ticksRun +
-                        " | rem=" + (this.timeAccumulatorNs / 1_000_000.0f) + "ms. Scheduling 21-frame forensic dump...");
+                        ". Scheduling 21-frame forensic dump...");
             }
         }
     }
