@@ -46,7 +46,7 @@ Any agent completing a class **MUST** update this file.
 
 ### 5. Engine, World & Game Loop
 - [x] `GameEngine.java` (`com.dotgears.C0210g`) - Base DotGears game engine, atlas parser, render queue (Verified with event queue, tweens, screen shake, screen fade/flash, input coordinates & quad routing test suite)
-- [ ] `FlappyGame.java` (`com.dotgears.flappy.C0206c`) - Main world controller, pipe generation, collisions
+- [x] `FlappyGame.java` (`com.dotgears.flappy.C0206c`) - Main world controller, pipe generation, collisions (Verified with AABB collision, pipe wrapping/scoring, menu flows & day/night selection test suite)
 
 ### 6. Platform, Rendering & Audio
 - [ ] `GLRenderer.java` - Clean GLES20 quad renderer (replaces legacy `C0200c` / AndEngine)
