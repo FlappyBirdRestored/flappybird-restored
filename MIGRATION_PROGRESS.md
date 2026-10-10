@@ -56,13 +56,15 @@ Any agent completing a class **MUST** update this file.
 
 ### 6. Platform, Rendering & Audio
 - [x] `GLRenderer.java` - Clean GLES20 quad renderer (replaces legacy `C0200c` / AndEngine) (Verified with pillarbox viewport, touch coordinate translation, 50-quad vertex batching, RenderBridge integration, generic VSync quantization & adaptive LTPO tracking test suite)
+- [x] `CadenceScheduler.java` - Rate-aware Bresenham integer cadence scheduler (Verified with 60/90/120/144/240 Hz cadences, ±10ms jitter tolerance, 3-frame resume warmup guard, low-refresh stall scaling, and 10-minute 36,000 tick endurance test suite)
 - [x] `AudioManager.java` - Low-latency `SoundPool` audio manager (Verified with action queue dispatch, 5 OGG sounds playback, mute state & GameEngine integration test suite)
-- [x] `GameActivity.java` (`com.dotgears.GameActivity`) - Main Android Activity (Verified with immersive mode, GLES20 lifecycle, touch bridge, audio/action forwarding & back key interception test suite)
+- [x] `GameActivity.java` (`com.dotgears.GameActivity`) - Main Android Activity (Verified with immersive mode, GLES20 lifecycle, touch bridge, audio/action forwarding, running median Choreographer tracking & back key interception test suite)
 - [x] `SplashScreen.java` (`com.dotgears.flappy.SplashScreen`) - 2-second splash screen (Verified with 2000ms delay constant, SplashRunnable delegation & GameActivity launch test suite)
 
 ---
 
 ## Technical Decisions Log
 * **Rendering Strategy**: Clean-room GLES20 quad renderer mapped to virtual 288x512 resolution (zero 32-bit `libandengine.so`).
+* **Frame Cadence & Variable Refresh Rates**: Decoupled 60 Hz physics simulation from arbitrary display panels (60 Hz, 90 Hz, 120 Hz, 144 Hz, 240 Hz, and <60 Hz power-saving) via pure integer Bresenham cadence scheduling (`acc += 60; while (acc >= rateHz)`), 3-frame resume burst warm-up guard, GL thread rate cross-check, and running median Choreographer hardware VSync tracking.
 * **Memory Model**: Retain original zero-allocation static arrays and object pools to guarantee smooth 60 FPS performance without GC pauses.
 * **Third-Party Services**: Decoupled legacy AdMob and Play Games Services; stubbed with offline fallbacks.
