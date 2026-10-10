@@ -7,6 +7,7 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
 import android.opengl.Matrix;
+import android.os.Trace;
 import android.util.Log;
 import android.view.Display;
 import android.view.WindowManager;
@@ -16,6 +17,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
+import java.util.Locale;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -120,6 +122,38 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     /** Detected hardware display refresh rate in Hz (default 60.0 Hz). */
     public float displayRefreshRate = 60.0f;
     private int refreshRatePollCounter = 0;
+
+    // Performance diagnostics probe (zero GC allocation)
+    public static final String PERF_TAG = "FlappyPerf";
+    public long diagWindowStartNs = 0L;
+    public int diagRenderFrames = 0;
+    public int diagPhysicsTicks = 0;
+    public int diagFrames0Ticks = 0;
+    public int diagFrames1Tick = 0;
+    public int diagFrames2Ticks = 0;
+    public int diagFrames3PlusTicks = 0;
+    public long diagTotalFrameNs = 0L;
+    public long diagMinFrameNs = Long.MAX_VALUE;
+    public long diagMaxFrameNs = 0L;
+    public long diagMaxUpdateNs = 0L;
+    public long diagMaxRenderNs = 0L;
+
+    // 64-frame ring buffer for GL thread timing forensics (Zero GC allocation)
+    public static final String TRACE_TAG = "FlappyTrace";
+    private static final int GL_RING_SIZE = 64;
+    private final long[] ringFrameIndex = new long[GL_RING_SIZE];
+    private final long[] ringTimestampNs = new long[GL_RING_SIZE];
+    private final long[] ringDtNs = new long[GL_RING_SIZE];
+    private final int[] ringTicksRun = new int[GL_RING_SIZE];
+    private final long[] ringRemainderNs = new long[GL_RING_SIZE];
+    public long totalGlFrames = 0L;
+
+    // Anomaly capture state
+    public long anomalyTriggerFrame = -1L;
+    public long anomalyTriggerTimestampNs = 0L;
+    public int anomalyDumpCountdown = -1;
+    public long lastAnomalyDumpFrame = -100L;
+    public int anomalyFlashFrames = 0;
 
     public GLRenderer() {
         initBuffers();
@@ -388,6 +422,20 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public void resetTimestep() {
         this.lastFrameTimeNs = 0L;
         this.timeAccumulatorNs = 0L;
+        this.diagWindowStartNs = 0L;
+        this.diagRenderFrames = 0;
+        this.diagPhysicsTicks = 0;
+        this.diagFrames0Ticks = 0;
+        this.diagFrames1Tick = 0;
+        this.diagFrames2Ticks = 0;
+        this.diagFrames3PlusTicks = 0;
+        this.diagTotalFrameNs = 0L;
+        this.diagMinFrameNs = Long.MAX_VALUE;
+        this.diagMaxFrameNs = 0L;
+        this.diagMaxUpdateNs = 0L;
+        this.diagMaxRenderNs = 0L;
+        this.anomalyDumpCountdown = -1;
+        this.anomalyFlashFrames = 0;
     }
 
     /**
@@ -448,63 +496,267 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
      * @return Number of 60 Hz ticks simulated.
      */
     public int stepSimulation(long elapsedNs) {
-        long effectiveNs = snapElapsedToVsync(elapsedNs);
-        if (effectiveNs < 0L) {
-            effectiveNs = 0L;
-        } else if (effectiveNs > MAX_ELAPSED_NS) {
-            effectiveNs = MAX_ELAPSED_NS;
-        }
-        this.timeAccumulatorNs += effectiveNs;
-
-        int ticksRun = 0;
-        if (this.engine != null) {
-            while (this.timeAccumulatorNs >= NS_PER_TICK) {
-                this.quadCount = 0;
-                this.engine.updateAndRender();
-
-                if (this.actionListener != null) {
-                    for (int i = 0; i < this.engine.actionLogCount; i++) {
-                        this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
-                    }
-                }
-
-                this.timeAccumulatorNs -= NS_PER_TICK;
-                ticksRun++;
+        Trace.beginSection("FlappyUpdate");
+        try {
+            long effectiveNs = snapElapsedToVsync(elapsedNs);
+            if (effectiveNs < 0L) {
+                effectiveNs = 0L;
+            } else if (effectiveNs > MAX_ELAPSED_NS) {
+                effectiveNs = MAX_ELAPSED_NS;
             }
+            this.timeAccumulatorNs += effectiveNs;
+
+            int ticksRun = 0;
+            if (this.engine != null) {
+                while (this.timeAccumulatorNs >= NS_PER_TICK) {
+                    this.quadCount = 0;
+                    long updateStartNs = System.nanoTime();
+                    this.engine.updateAndRender();
+                    long updateDurationNs = System.nanoTime() - updateStartNs;
+                    if (updateDurationNs > this.diagMaxUpdateNs) {
+                        this.diagMaxUpdateNs = updateDurationNs;
+                    }
+
+                    if (this.actionListener != null) {
+                        for (int i = 0; i < this.engine.actionLogCount; i++) {
+                            this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
+                        }
+                    }
+
+                    this.timeAccumulatorNs -= NS_PER_TICK;
+                    ticksRun++;
+                }
+            }
+            return ticksRun;
+        } finally {
+            Trace.endSection();
         }
-        return ticksRun;
     }
 
     @Override
     public void onDrawFrame(GL10 gl) {
-        // 1. Periodically check for dynamic display refresh rate switches (e.g. LTPO transitions) every 60 frames (~1s)
-        this.refreshRatePollCounter++;
-        if (this.refreshRatePollCounter >= 60) {
-            this.refreshRatePollCounter = 0;
-            updateDisplayRefreshRate(this.context);
+        Trace.beginSection("FlappyDraw");
+        try {
+            long frameStartNs = System.nanoTime();
+
+            // 1. Periodically check for dynamic display refresh rate switches (e.g. LTPO transitions) every 60 frames (~1s)
+            this.refreshRatePollCounter++;
+            if (this.refreshRatePollCounter >= 60) {
+                this.refreshRatePollCounter = 0;
+                updateDisplayRefreshRate(this.context);
+            }
+
+            // 2. Clear outer screen to black for clean pillarbox bars
+            GLES20.glViewport(0, 0, this.screenWidth, this.screenHeight);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+
+            // 3. Set pillarboxed viewport for virtual canvas
+            GLES20.glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
+
+            // 4. Fixed-timestep accumulator: decouple 60 Hz physics from display refresh rate
+            int ticksRun = 0;
+            long elapsed = 0L;
+            if (this.lastFrameTimeNs == 0L) {
+                this.lastFrameTimeNs = frameStartNs;
+                // Prime accumulator on first frame to ensure initial scene quads are generated
+                ticksRun = stepSimulation(NS_PER_TICK);
+            } else {
+                elapsed = frameStartNs - this.lastFrameTimeNs;
+                this.lastFrameTimeNs = frameStartNs;
+                ticksRun = stepSimulation(elapsed);
+            }
+
+            // 5. Draw queued quads (retains previous frame quads if no logic tick ran)
+            long renderStartNs = System.nanoTime();
+            renderBatchedQuads();
+            long renderDurationNs = System.nanoTime() - renderStartNs;
+
+            // 6. Visual indicator overlay: flash red badge in corner on anomaly for human visual correlation
+            if (this.anomalyFlashFrames > 0) {
+                this.anomalyFlashFrames--;
+                renderAnomalyBadge();
+            }
+
+            // 7. Forensic instrumentation: record into GL ring buffer and check anomaly trigger
+            recordFrameForensics(frameStartNs, elapsed, ticksRun);
+
+            // 8. Record aggregate diagnostics metrics
+            recordDiagnostics(elapsed, ticksRun, renderDurationNs);
+        } finally {
+            Trace.endSection();
+        }
+    }
+
+    /**
+     * Records performance metrics and logs 3-second aggregate diagnostic summaries and hitch alerts.
+     */
+    private void recordDiagnostics(long elapsedNs, int ticksRun, long renderDurationNs) {
+        if (elapsedNs <= 0L) {
+            return;
         }
 
-        // 2. Clear outer screen to black for clean pillarbox bars
-        GLES20.glViewport(0, 0, this.screenWidth, this.screenHeight);
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-
-        // 3. Set pillarboxed viewport for virtual canvas
-        GLES20.glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
-
-        // 4. Fixed-timestep accumulator: decouple 60 Hz physics from display refresh rate
         long now = System.nanoTime();
-        if (this.lastFrameTimeNs == 0L) {
-            this.lastFrameTimeNs = now;
-            // Prime accumulator on first frame to ensure initial scene quads are generated
-            stepSimulation(NS_PER_TICK);
-        } else {
-            long elapsed = now - this.lastFrameTimeNs;
-            this.lastFrameTimeNs = now;
-            stepSimulation(elapsed);
+        if (this.diagWindowStartNs == 0L) {
+            this.diagWindowStartNs = now;
         }
 
-        // 5. Draw queued quads (retains previous frame quads if no logic tick ran)
-        renderBatchedQuads();
+        this.diagRenderFrames++;
+        this.diagPhysicsTicks += ticksRun;
+        this.diagTotalFrameNs += elapsedNs;
+
+        if (ticksRun == 0) {
+            this.diagFrames0Ticks++;
+        } else if (ticksRun == 1) {
+            this.diagFrames1Tick++;
+        } else if (ticksRun == 2) {
+            this.diagFrames2Ticks++;
+        } else {
+            this.diagFrames3PlusTicks++;
+        }
+
+        if (elapsedNs < this.diagMinFrameNs) {
+            this.diagMinFrameNs = elapsedNs;
+        }
+        if (elapsedNs > this.diagMaxFrameNs) {
+            this.diagMaxFrameNs = elapsedNs;
+        }
+        if (renderDurationNs > this.diagMaxRenderNs) {
+            this.diagMaxRenderNs = renderDurationNs;
+        }
+
+        // Hitch warning for frames longer than 25ms (dropped 60Hz frame or 2x 120Hz frames)
+        if (elapsedNs > 25_000_000L && this.diagRenderFrames > 10) {
+            Log.w(PERF_TAG, "Hitch: frame=" + (elapsedNs / 1_000_000.0f) + "ms, ticks=" + ticksRun);
+        }
+
+        // Emit aggregate window summary every 3 seconds (3,000,000,000 ns)
+        long windowDurationNs = now - this.diagWindowStartNs;
+        if (windowDurationNs >= 3_000_000_000L) {
+            float windowSeconds = windowDurationNs / 1_000_000_000.0f;
+            float fps = this.diagRenderFrames / windowSeconds;
+            float ticksPerSec = this.diagPhysicsTicks / windowSeconds;
+            float avgFrameMs = (this.diagTotalFrameNs / (float) this.diagRenderFrames) / 1_000_000.0f;
+            float minFrameMs = this.diagMinFrameNs / 1_000_000.0f;
+            float maxFrameMs = this.diagMaxFrameNs / 1_000_000.0f;
+            float maxUpdateMs = this.diagMaxUpdateNs / 1_000_000.0f;
+            float maxRenderMs = this.diagMaxRenderNs / 1_000_000.0f;
+
+            Log.i(PERF_TAG, String.format(Locale.US,
+                    "FPS: %.1f | Ticks/s: %.1f | Cadence: [0:%d, 1:%d, 2:%d, 3+:%d] | " +
+                    "Frame(ms): avg=%.2f, min=%.2f, max=%.2f | MaxUpdate: %.2fms | MaxRender: %.2fms | Display: %.1fHz",
+                    fps, ticksPerSec,
+                    this.diagFrames0Ticks, this.diagFrames1Tick, this.diagFrames2Ticks, this.diagFrames3PlusTicks,
+                    avgFrameMs, minFrameMs, maxFrameMs, maxUpdateMs, maxRenderMs, this.displayRefreshRate));
+
+            // Reset diagnostic counters for next window
+            this.diagWindowStartNs = now;
+            this.diagRenderFrames = 0;
+            this.diagPhysicsTicks = 0;
+            this.diagFrames0Ticks = 0;
+            this.diagFrames1Tick = 0;
+            this.diagFrames2Ticks = 0;
+            this.diagFrames3PlusTicks = 0;
+            this.diagTotalFrameNs = 0L;
+            this.diagMinFrameNs = Long.MAX_VALUE;
+            this.diagMaxFrameNs = 0L;
+            this.diagMaxUpdateNs = 0L;
+            this.diagMaxRenderNs = 0L;
+        }
+    }
+
+    /**
+     * Records per-frame timing metrics into the GL thread ring buffer and schedules a 21-frame
+     * forensic dump if an anomaly occurs.
+     */
+    private void recordFrameForensics(long frameStartNs, long elapsedNs, int ticksRun) {
+        long frameIndex = this.totalGlFrames++;
+        int slot = (int) (frameIndex % GL_RING_SIZE);
+        this.ringFrameIndex[slot] = frameIndex;
+        this.ringTimestampNs[slot] = frameStartNs;
+        this.ringDtNs[slot] = elapsedNs;
+        this.ringTicksRun[slot] = ticksRun;
+        this.ringRemainderNs[slot] = this.timeAccumulatorNs;
+
+        // Anomaly dump countdown handler: triggers dump exactly 10 frames after the anomaly
+        if (this.anomalyDumpCountdown > 0) {
+            this.anomalyDumpCountdown--;
+            if (this.anomalyDumpCountdown == 0) {
+                dumpAnomalyTrace(this.anomalyTriggerFrame, this.anomalyTriggerTimestampNs);
+                this.anomalyDumpCountdown = -1;
+            }
+        }
+
+        // Anomaly detection (after initial 30 frames warm-up and 30-frame debounce)
+        if (this.totalGlFrames > 30 && (frameIndex - this.lastAnomalyDumpFrame > 30) && this.anomalyDumpCountdown < 0) {
+            boolean isAnomaly = false;
+
+            // Condition 1: Physics tick count is not 1 on a ~60Hz target
+            if (ticksRun != 1) {
+                isAnomaly = true;
+            }
+
+            // Condition 2: Frame delta deviates significantly from VSync period (e.g. > 22ms or < 11ms at 60Hz)
+            long vsyncNs = (long) (1_000_000_000.0 / (this.displayRefreshRate > 20f ? this.displayRefreshRate : 60f));
+            if (vsyncNs > 0L && Math.abs(elapsedNs - vsyncNs) > (vsyncNs * 0.35f)) {
+                isAnomaly = true;
+            }
+
+            if (isAnomaly) {
+                this.anomalyTriggerFrame = frameIndex;
+                this.anomalyTriggerTimestampNs = frameStartNs;
+                this.anomalyDumpCountdown = 10; // Wait 10 frames after anomaly to dump both past and future
+                this.anomalyFlashFrames = 10;   // Flash visual red badge for 10 frames (~160ms)
+                Log.w(TRACE_TAG, "!!! ANOMALY DETECTED at GL frame #" + frameIndex +
+                        " | dt=" + (elapsedNs / 1_000_000.0f) + "ms | ticks=" + ticksRun +
+                        " | rem=" + (this.timeAccumulatorNs / 1_000_000.0f) + "ms. Scheduling 21-frame forensic dump...");
+            }
+        }
+    }
+
+    /**
+     * Dumps ~10 frames before and 10 frames after an anomaly from the GL ring buffer,
+     * immediately followed by the corresponding Choreographer hardware VSync trace.
+     */
+    private void dumpAnomalyTrace(long triggerFrame, long triggerTimestampNs) {
+        this.lastAnomalyDumpFrame = triggerFrame;
+        Log.w(TRACE_TAG, "==================== FORENSIC ANOMALY TRACE START ====================");
+        Log.w(TRACE_TAG, "--- GL Thread Frame Ring Buffer (Trigger Frame #" + triggerFrame + ") ---");
+        long start = Math.max(0, triggerFrame - 10);
+        long end = Math.min(this.totalGlFrames - 1, triggerFrame + 10);
+        for (long f = start; f <= end; f++) {
+            int slot = (int) (f % GL_RING_SIZE);
+            if (this.ringFrameIndex[slot] == f) {
+                String marker = (f == triggerFrame) ? " <-- [ANOMALY TRIGGER]" : "";
+                Log.w(TRACE_TAG, String.format(Locale.US,
+                        "GL #%d | time=%d | dt=%.2fms | ticks=%d | rem=%.2fms%s",
+                        this.ringFrameIndex[slot],
+                        this.ringTimestampNs[slot],
+                        this.ringDtNs[slot] / 1_000_000.0f,
+                        this.ringTicksRun[slot],
+                        this.ringRemainderNs[slot] / 1_000_000.0f,
+                        marker));
+            }
+        }
+
+        // Trigger aligned Choreographer hardware VSync trace on main looper
+        GameActivity.dumpChoreographerTrace(triggerTimestampNs);
+        Log.w(TRACE_TAG, "==================== FORENSIC ANOMALY TRACE END ======================");
+    }
+
+    /**
+     * Renders a small high-visibility red badge indicator in the corner of the display for human visual correlation.
+     * Uses zero allocations and standard OpenGL scissor rectangle clear.
+     */
+    private void renderAnomalyBadge() {
+        GLES20.glEnable(GLES20.GL_SCISSOR_TEST);
+        int badgeSize = Math.max(24, this.viewportWidth / 12);
+        int badgeX = this.viewportX + 8;
+        int badgeY = this.viewportY + this.viewportHeight - badgeSize - 8;
+        GLES20.glScissor(badgeX, badgeY, badgeSize, badgeSize);
+        GLES20.glClearColor(1.0f, 0.1f, 0.1f, 1.0f);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        GLES20.glDisable(GLES20.GL_SCISSOR_TEST);
+        GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     /**

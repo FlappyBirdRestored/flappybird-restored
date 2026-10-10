@@ -9,6 +9,7 @@ import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -19,6 +20,7 @@ import com.dotgears.flappy.FlappyGame;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 
 /**
  * GameActivity - Main Android Game Activity for Flappy Bird.
@@ -28,11 +30,22 @@ import java.io.InputStream;
  * - Bridges multi-touch input to virtual 288x512 coordinates.
  * - Handles audio playback and offline SharedPreferences high-score persistence.
  */
-public class GameActivity extends Activity {
+public class GameActivity extends Activity implements Choreographer.FrameCallback {
 
     public static final String TAG = "FlappyBird";
     public static final String PREFS_NAME = "FlappyBird";
     public static final String PREF_KEY_SCORE = "score";
+
+    public static final String TRACE_TAG = "FlappyTrace";
+    public static GameActivity instance;
+
+    // 64-frame ring buffer for Choreographer hardware VSync timestamps
+    private static final int CH_RING_SIZE = 64;
+    private final long[] chFrameIndex = new long[CH_RING_SIZE];
+    private final long[] chTimestampNs = new long[CH_RING_SIZE];
+    private final long[] chDtNs = new long[CH_RING_SIZE];
+    private long chTotalFrames = 0L;
+    private long chLastTimestampNs = 0L;
 
     public GLSurfaceView glSurfaceView;
     public GLRenderer renderer;
@@ -44,6 +57,7 @@ public class GameActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        instance = this;
 
         // Fullscreen and keep screen awake
         requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -266,6 +280,7 @@ public class GameActivity extends Activity {
     protected void onResume() {
         super.onResume();
         hideSystemUI();
+        Choreographer.getInstance().postFrameCallback(this);
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onResume();
         }
@@ -280,11 +295,63 @@ public class GameActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        Choreographer.getInstance().removeFrameCallback(this);
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onPause();
         }
         if (this.game != null) {
             this.game.paused = true;
+        }
+    }
+
+    @Override
+    public void doFrame(long frameTimeNanos) {
+        long dt = (this.chLastTimestampNs == 0L) ? 0L : (frameTimeNanos - this.chLastTimestampNs);
+        this.chLastTimestampNs = frameTimeNanos;
+        long idx = this.chTotalFrames++;
+        int slot = (int) (idx % CH_RING_SIZE);
+        this.chFrameIndex[slot] = idx;
+        this.chTimestampNs[slot] = frameTimeNanos;
+        this.chDtNs[slot] = dt;
+
+        Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    public static void dumpChoreographerTrace(long triggerTimestampNs) {
+        if (instance == null) return;
+        instance.dumpChoreographerInternal(triggerTimestampNs);
+    }
+
+    private void dumpChoreographerInternal(long triggerTimestampNs) {
+        Log.w(TRACE_TAG, "--- Choreographer Hardware VSync Trace (Main Looper) ---");
+        // Find Choreographer frame temporally closest to the GL anomaly timestamp
+        long closestFrame = -1L;
+        long minDiff = Long.MAX_VALUE;
+        long startScan = Math.max(0, this.chTotalFrames - CH_RING_SIZE);
+        for (long f = startScan; f < this.chTotalFrames; f++) {
+            int slot = (int) (f % CH_RING_SIZE);
+            if (this.chFrameIndex[slot] == f) {
+                long diff = Math.abs(this.chTimestampNs[slot] - triggerTimestampNs);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestFrame = f;
+                }
+            }
+        }
+
+        long start = Math.max(0, (closestFrame >= 0 ? closestFrame - 10 : this.chTotalFrames - 21));
+        long end = (closestFrame >= 0 ? Math.min(this.chTotalFrames - 1, closestFrame + 10) : this.chTotalFrames - 1);
+        for (long f = start; f <= end; f++) {
+            int slot = (int) (f % CH_RING_SIZE);
+            if (this.chFrameIndex[slot] == f) {
+                String marker = (f == closestFrame) ? " <-- [CLOSEST TO GL ANOMALY]" : "";
+                Log.w(TRACE_TAG, String.format(Locale.US,
+                        "ChoreoVSync #%d | time=%d | dt=%.2fms%s",
+                        this.chFrameIndex[slot],
+                        this.chTimestampNs[slot],
+                        this.chDtNs[slot] / 1_000_000.0f,
+                        marker));
+            }
         }
     }
 

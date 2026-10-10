@@ -255,4 +255,16 @@ public class GLRendererTest {
         long snapped = renderer.snapElapsedToVsync(33_000_000L);
         assertEquals(GLRenderer.NS_PER_TICK * 2L, snapped);
     }
+
+    @Test
+    public void testResetTimestepClearsAnomalyState() {
+        renderer.anomalyDumpCountdown = 5;
+        renderer.anomalyFlashFrames = 8;
+        renderer.resetTimestep();
+
+        assertEquals(-1, renderer.anomalyDumpCountdown);
+        assertEquals(0, renderer.anomalyFlashFrames);
+        assertEquals(0L, renderer.timeAccumulatorNs);
+        assertEquals(0L, renderer.lastFrameTimeNs);
+    }
 }
