@@ -108,9 +108,8 @@ public class AudioManager {
     }
 
     private int loadAsset(Context context, String filename) {
-        try {
-            AssetFileDescriptor afd = context.getAssets().openFd("sounds/" + filename);
-            return this.soundPool.load(afd, 1);
+        try (AssetFileDescriptor afd = context.getAssets().openFd("sounds/" + filename)) {
+            return this.soundPool.load(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength(), 1);
         } catch (IOException e) {
             Log.e(TAG, "Could not open asset sounds/" + filename + ": " + e.getMessage());
             return 0;

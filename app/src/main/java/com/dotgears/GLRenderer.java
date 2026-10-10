@@ -408,13 +408,27 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
      * Loads the 1024x1024 atlas.png texture from assets into OpenGL with NEAREST filtering.
      */
     public void loadAtlasTexture(Context ctx) {
+        InputStream is = null;
         try {
-            InputStream is = ctx.getAssets().open("atlas.png");
-            Bitmap bitmap = BitmapFactory.decodeStream(is);
-            is.close();
+            try {
+                is = ctx.getAssets().open("gfx/atlas.png");
+            } catch (Exception ignored) {
+                is = ctx.getAssets().open("atlas.png");
+            }
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inScaled = false;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap bitmap = BitmapFactory.decodeStream(is, null, options);
             loadTexture(bitmap);
+            Log.i(TAG, "Successfully loaded atlas texture! ID=" + this.textureId);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to load atlas.png: " + e.getMessage());
+            Log.e(TAG, "Failed to load atlas.png: " + e.getMessage(), e);
+        } finally {
+            if (is != null) {
+                try {
+                    is.close();
+                } catch (Exception ignored) {}
+            }
         }
     }
 
