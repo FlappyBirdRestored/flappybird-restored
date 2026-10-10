@@ -60,26 +60,34 @@ jobs:
             echo "Ephemeral keystore securely destroyed."
           fi
 
-      - name: Locate Release APK
-        id: locate_apk
+      - name: Prepare Named Release APK
+        id: prepare_apk
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
-          if [ -z "$APK_PATH" ]; then
+          RAW_APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          if [ -z "$RAW_APK" ]; then
             echo "Error: No release APK generated!"
             exit 1
           fi
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "Found release APK: $APK_PATH"
+          ORIGINAL_VERSION="v1.3"
+          TAG_NAME="${{ github.ref_name }}"
+          DEST_NAME="flappybird-restored-${ORIGINAL_VERSION}-${TAG_NAME}.apk"
+          DEST_PATH="app/build/outputs/apk/release/${DEST_NAME}"
+          if [ "$RAW_APK" != "$DEST_PATH" ]; then
+            mv "$RAW_APK" "$DEST_PATH"
+          fi
+          echo "apk_path=$DEST_PATH" >> $GITHUB_OUTPUT
+          echo "apk_name=$DEST_NAME" >> $GITHUB_OUTPUT
+          echo "Prepared release APK: $DEST_NAME"
 
       - name: Attest Build Provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: ${{ steps.locate_apk.outputs.apk_path }}
+          subject-path: ${{ steps.prepare_apk.outputs.apk_path }}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.locate_apk.outputs.apk_path }}
+          files: ${{ steps.prepare_apk.outputs.apk_path }}
           generate_release_notes: true
           draft: false
           prerelease: false
