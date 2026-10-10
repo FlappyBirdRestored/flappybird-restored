@@ -274,4 +274,23 @@ public class GLRendererTest {
         // 4th frame returns steady 1 tick
         assertEquals(1, renderer.stepSimulation(16_666_667L));
     }
+
+    @Test
+    public void testRateDisagreementProducesCorrectSpeed() {
+        GameEngine engine = new GameEngine();
+        renderer.setEngine(engine);
+        // Display proposes 120 Hz, but GL surface can only draw at 60 FPS (16.67ms dt)
+        renderer.cadenceScheduler.setRateHz(120);
+
+        // Run 3 seconds of 60 FPS frames (180 frames)
+        int totalTicks = 0;
+        for (int i = 0; i < 180; i++) {
+            totalTicks += renderer.stepSimulation(16_666_667L);
+        }
+
+        // Even with initial rate disagreement, watchdog fallback guarantees the game
+        // does not permanently run in 0.5x slow-motion, recovering 60 ticks/s!
+        assertTrue("Game must recover full 60 ticks/s rate in fallback", totalTicks >= 120);
+        assertTrue(renderer.cadenceScheduler.isWatchdogFallback());
+    }
 }

@@ -12,6 +12,8 @@ import android.util.Log;
 import android.view.Display;
 import android.view.WindowManager;
 
+import com.dotgears.flappybird.BuildConfig;
+
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -160,6 +162,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
 
     // Anomaly suppression frames after resume / reset to ignore lifecycle transitions (default 30 frames)
     public int suppressAnomalyFrames = 30;
+
+    // GL frame rate tracking for cross-checking against panel VSync
+    private long glElapsedSumNs = 0L;
+    private int glElapsedCount = 0;
 
     public GLRenderer() {
         initBuffers();
@@ -452,6 +458,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public void resetTimestep(boolean enableWarmup) {
         this.lastFrameTimeNs = 0L;
         this.timeAccumulatorNs = 0L;
+        this.glElapsedSumNs = 0L;
+        this.glElapsedCount = 0;
         this.cadenceScheduler.reset();
         if (enableWarmup) {
             this.cadenceScheduler.triggerWarmup(CadenceScheduler.DEFAULT_WARMUP_FRAMES);
@@ -547,6 +555,32 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             } else {
                 elapsed = frameStartNs - this.lastFrameTimeNs;
                 this.lastFrameTimeNs = frameStartNs;
+
+                // Rate-source cross-check: verify proposed rate against actual GL frame delivery
+                if (elapsed > 0L) {
+                    this.glElapsedSumNs += elapsed;
+                    this.glElapsedCount++;
+                    if (this.glElapsedCount >= 30) {
+                        long avgGlDt = this.glElapsedSumNs / this.glElapsedCount;
+                        if (avgGlDt > 0L) {
+                            int measuredGlFps = (int) Math.round(1_000_000_000.0 / (double) avgGlDt);
+                            int candidateRate = this.cadenceScheduler.getCandidateRateHz();
+                            // If GL thread is throttled significantly below proposed rate (e.g. 60 FPS on 120 Hz display)
+                            if (candidateRate > measuredGlFps + 15 && measuredGlFps >= 20) {
+                                int effectiveRate = CadenceScheduler.snapToStandardRefreshRate(measuredGlFps);
+                                this.cadenceScheduler.proposeRateHz(effectiveRate);
+                            }
+                        }
+                        this.glElapsedSumNs = 0L;
+                        this.glElapsedCount = 0;
+                    }
+                }
+
+                // Check stale Choreographer sample timeout (>0.5s without update)
+                if (GameActivity.lastVsyncSampleTimeNs > 0L && (frameStartNs - GameActivity.lastVsyncSampleTimeNs > 500_000_000L)) {
+                    updateDisplayRefreshRate(this.context);
+                }
+
                 ticksRun = stepSimulation(elapsed);
             }
 
@@ -556,16 +590,16 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
             long renderDurationNs = System.nanoTime() - renderStartNs;
 
             // 6. Visual indicator overlay: flash red badge in corner on anomaly for human visual correlation
-            if (this.anomalyFlashFrames > 0) {
+            if (BuildConfig.DEBUG && this.anomalyFlashFrames > 0) {
                 this.anomalyFlashFrames--;
                 renderAnomalyBadge();
             }
 
             // 7. Forensic instrumentation: record into GL ring buffer and check anomaly trigger
-            recordFrameForensics(frameStartNs, elapsed, ticksRun);
-
-            // 8. Record aggregate diagnostics metrics
-            recordDiagnostics(elapsed, ticksRun, renderDurationNs);
+            if (BuildConfig.DEBUG) {
+                recordFrameForensics(frameStartNs, elapsed, ticksRun);
+                recordDiagnostics(elapsed, ticksRun, renderDurationNs);
+            }
         } finally {
             Trace.endSection();
         }

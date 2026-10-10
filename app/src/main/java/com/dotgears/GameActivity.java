@@ -20,6 +20,7 @@ import android.view.Window;
 import android.view.WindowManager;
 
 import com.dotgears.flappy.FlappyGame;
+import com.dotgears.flappybird.BuildConfig;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,6 +51,10 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
     private final long[] chDtNs = new long[CH_RING_SIZE];
     private long chTotalFrames = 0L;
     private long chLastTimestampNs = 0L;
+
+    // Hardware VSync Rate publication to GL thread (thread-safe volatile)
+    public static volatile int hardwareVsyncRateHz = 60;
+    public static volatile long lastVsyncSampleTimeNs = 0L;
 
     // Median Choreographer interval tracker (Zero GC)
     private static final int RATE_SAMPLES = 31;
@@ -389,6 +394,8 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
                 if (medianDtNs > 0L) {
                     double rate = 1_000_000_000.0 / (double) medianDtNs;
                     int detectedHz = CadenceScheduler.snapToStandardRefreshRate((int) Math.round(rate));
+                    hardwareVsyncRateHz = detectedHz;
+                    lastVsyncSampleTimeNs = System.nanoTime();
                     if (this.renderer != null) {
                         this.renderer.proposeHardwareRate(detectedHz);
                     }
@@ -400,7 +407,7 @@ public class GameActivity extends Activity implements Choreographer.FrameCallbac
     }
 
     public static void dumpChoreographerTrace(long triggerTimestampNs) {
-        if (instance == null) return;
+        if (!BuildConfig.DEBUG || instance == null) return;
         instance.dumpChoreographerInternal(triggerTimestampNs);
     }
 
