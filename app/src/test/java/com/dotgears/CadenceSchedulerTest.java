@@ -239,4 +239,112 @@ public class CadenceSchedulerTest {
         // Frame 4: normal steady-state hardware VSync (16.67ms) resumes 1 tick execution
         assertEquals(1, scheduler.step(16_666_667L));
     }
+
+    @Test
+    public void testStallThresholdScalesAtLowRefreshRates() {
+        // At 24 Hz, nominal period is 41.67ms. Hardcoded 41.7ms would falsely trigger a stall!
+        scheduler.setRateHz(24);
+
+        // Legitimate 24 Hz frame at 41.67ms must NOT trigger a stall catch-up
+        int ticksNormal = scheduler.step(41_666_667L);
+        // At 24 Hz, Bresenham: 60/24 = 2.5 ticks/frame (acc += 60 -> 2 ticks, remainder 12)
+        assertEquals(2, ticksNormal);
+        assertEquals(12, scheduler.getAccumulator()); // Bresenham accumulator preserved, not reset!
+
+        // Frame exceeding 2.5x nominal period (> 104.2ms) IS a stall: triggers clamp and resets accumulator
+        int ticksStall = scheduler.step(110_000_000L);
+        assertTrue(ticksStall >= 3);
+        assertEquals(0, scheduler.getAccumulator()); // Reset on true stall
+    }
+
+    @Test
+    public void testWatchdogRecoveryRequiresThreeGoodWindows() {
+        scheduler.setRateHz(120);
+
+        // Trigger watchdog fallback by feeding 2 bad 1-second windows (60 frames at 16.67ms = 30 ticks each)
+        for (int i = 0; i < 120; i++) {
+            scheduler.step(16_666_667L);
+        }
+        assertTrue("Watchdog must trip after 2 bad windows", scheduler.isWatchdogFallback());
+
+        // Good window 1 (60 frames of 16.67ms via time accumulator produces 60 ticks)
+        for (int i = 0; i < 60; i++) {
+            scheduler.step(16_666_667L);
+        }
+        assertTrue("Still in fallback after 1 good window", scheduler.isWatchdogFallback());
+        assertEquals(1, scheduler.getConsecutiveGoodWindows());
+
+        // Good window 2
+        for (int i = 0; i < 60; i++) {
+            scheduler.step(16_666_667L);
+        }
+        assertTrue("Still in fallback after 2 good windows", scheduler.isWatchdogFallback());
+        assertEquals(2, scheduler.getConsecutiveGoodWindows());
+
+        // Good window 3: satisfies 3-window recovery requirement
+        for (int i = 0; i < 60; i++) {
+            scheduler.step(16_666_667L);
+        }
+        assertFalse("Must exit fallback after 3 consecutive good windows", scheduler.isWatchdogFallback());
+        assertEquals(0, scheduler.getConsecutiveGoodWindows());
+    }
+
+    @Test
+    public void testTenMinuteEnduranceAt90Hz() {
+        scheduler.setRateHz(90);
+        int totalTicks = 0;
+
+        // 10 simulated minutes = 600 seconds * 90 frames/sec = 54,000 frames
+        for (int i = 0; i < 54_000; i++) {
+            totalTicks += scheduler.step(11_111_111L);
+        }
+
+        // Exactly 600 seconds * 60 ticks/second = 36,000 ticks
+        assertEquals("10 minutes at 90 Hz must produce exactly 36,000 ticks with zero drift", 36_000, totalTicks);
+    }
+
+    @Test
+    public void testTenMinuteEnduranceAt144Hz() {
+        scheduler.setRateHz(144);
+        int totalTicks = 0;
+
+        // 10 simulated minutes = 600 seconds * 144 frames/sec = 86,400 frames
+        for (int i = 0; i < 86_400; i++) {
+            totalTicks += scheduler.step(6_944_444L);
+        }
+
+        // Exactly 600 seconds * 60 ticks/second = 36,000 ticks
+        assertEquals("10 minutes at 144 Hz must produce exactly 36,000 ticks with zero drift", 36_000, totalTicks);
+    }
+
+    @Test
+    public void testMidRunRateSwitch() {
+        scheduler.setRateHz(60);
+
+        // Run 60 frames at 60 Hz (1 second)
+        int ticks60Hz = 0;
+        for (int i = 0; i < 60; i++) {
+            ticks60Hz += scheduler.step(16_666_667L);
+        }
+        assertEquals(60, ticks60Hz);
+
+        // Propose switch to 120 Hz
+        scheduler.proposeRateHz(120);
+
+        // Run transition frames (0.5s = 60 frames at 8.333334ms)
+        int transitionTicks = 0;
+        for (int i = 0; i < 60; i++) {
+            transitionTicks += scheduler.step(8_333_334L);
+        }
+        // Time accumulator during transition produces 30 ticks (0.5s * 60 ticks/s = 30 ticks)
+        assertEquals(30, transitionTicks);
+        assertEquals(120, scheduler.getRateHz()); // Latched!
+
+        // Run at steady 120 Hz for 1 second (120 frames at 8.333334ms)
+        int ticks120Hz = 0;
+        for (int i = 0; i < 120; i++) {
+            ticks120Hz += scheduler.step(8_333_334L);
+        }
+        assertEquals(60, ticks120Hz);
+    }
 }

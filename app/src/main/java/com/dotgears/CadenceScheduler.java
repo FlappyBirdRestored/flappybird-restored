@@ -66,6 +66,7 @@ public class CadenceScheduler {
     private long watchdogElapsedNs = 0L;
     private int watchdogTicks = 0;
     private int consecutiveBadWindows = 0;
+    private int consecutiveGoodWindows = 0;
     private boolean watchdogFallback = false;
 
     public CadenceScheduler() {
@@ -99,7 +100,14 @@ public class CadenceScheduler {
         if (this.rateChanging) {
             this.candidateDurationNs += elapsedNs;
             if (this.candidateDurationNs >= STABILITY_DURATION_NS) {
-                // Latch new stable rate
+                // Drain any pending tick from the transition window before latching
+                this.timeAccumulatorNs += elapsedNs;
+                int transitionTicks = 0;
+                while (this.timeAccumulatorNs >= NS_PER_TICK) {
+                    this.timeAccumulatorNs -= NS_PER_TICK;
+                    transitionTicks++;
+                }
+                // Latch new stable rate and cleanly reset state for Bresenham mode
                 this.rateHz = this.candidateRateHz;
                 this.acc = 0;
                 this.timeAccumulatorNs = 0L;
@@ -107,12 +115,16 @@ public class CadenceScheduler {
                 this.watchdogElapsedNs = 0L;
                 this.watchdogTicks = 0;
                 this.consecutiveBadWindows = 0;
+                this.consecutiveGoodWindows = 0;
                 this.watchdogFallback = false;
+                return transitionTicks;
             }
         }
 
-        // 3. Multi-frame stall guard (elapsedNs > 41.7ms)
-        if (elapsedNs > STALL_THRESHOLD_NS) {
+        // 3. Multi-frame stall guard (max(41.7ms, 2.5 * nominal frame period))
+        long nominalPeriodNs = 1_000_000_000L / Math.max(20, this.rateHz);
+        long dynamicStallThresholdNs = Math.max(STALL_THRESHOLD_NS, (long) (2.5 * nominalPeriodNs));
+        if (elapsedNs > dynamicStallThresholdNs) {
             int stallTicks = (int) Math.min(4, Math.round((double) elapsedNs / (double) NS_PER_TICK));
             this.acc = 0;
             this.timeAccumulatorNs = 0L;
@@ -126,7 +138,8 @@ public class CadenceScheduler {
         boolean useTimeAccumulator = this.rateChanging || this.watchdogFallback;
 
         if (useTimeAccumulator) {
-            this.timeAccumulatorNs += elapsedNs;
+            long clampedElapsedNs = Math.min(elapsedNs, MAX_FALLBACK_ACC_NS);
+            this.timeAccumulatorNs += clampedElapsedNs;
             if (this.timeAccumulatorNs > MAX_FALLBACK_ACC_NS) {
                 this.timeAccumulatorNs = MAX_FALLBACK_ACC_NS;
             }
@@ -147,13 +160,32 @@ public class CadenceScheduler {
         this.watchdogElapsedNs += elapsedNs;
         this.watchdogTicks += ticks;
         if (this.watchdogElapsedNs >= WATCHDOG_WINDOW_NS) {
-            if (this.watchdogTicks >= WATCHDOG_MIN_TICKS && this.watchdogTicks <= WATCHDOG_MAX_TICKS) {
-                this.consecutiveBadWindows = 0;
-                this.watchdogFallback = false;
+            boolean isGoodWindow = (this.watchdogTicks >= WATCHDOG_MIN_TICKS && this.watchdogTicks <= WATCHDOG_MAX_TICKS);
+            if (this.watchdogFallback) {
+                if (isGoodWindow) {
+                    this.consecutiveGoodWindows++;
+                    if (this.consecutiveGoodWindows >= 3) {
+                        // Require 3 consecutive good windows (3s) to exit fallback mode and restore Bresenham
+                        this.watchdogFallback = false;
+                        this.consecutiveGoodWindows = 0;
+                        this.consecutiveBadWindows = 0;
+                        this.acc = 0;
+                        this.timeAccumulatorNs = 0L;
+                    }
+                } else {
+                    this.consecutiveGoodWindows = 0;
+                }
             } else {
-                this.consecutiveBadWindows++;
-                if (this.consecutiveBadWindows >= 2) {
-                    this.watchdogFallback = true;
+                if (isGoodWindow) {
+                    this.consecutiveBadWindows = 0;
+                } else {
+                    this.consecutiveBadWindows++;
+                    if (this.consecutiveBadWindows >= 2) {
+                        this.watchdogFallback = true;
+                        this.consecutiveGoodWindows = 0;
+                        this.acc = 0;
+                        this.timeAccumulatorNs = 0L;
+                    }
                 }
             }
             this.watchdogElapsedNs -= WATCHDOG_WINDOW_NS;
@@ -218,8 +250,13 @@ public class CadenceScheduler {
         this.watchdogElapsedNs = 0L;
         this.watchdogTicks = 0;
         this.consecutiveBadWindows = 0;
+        this.consecutiveGoodWindows = 0;
         this.watchdogFallback = false;
         this.warmupFrames = 0;
+    }
+
+    public int getConsecutiveGoodWindows() {
+        return this.consecutiveGoodWindows;
     }
 
     /**
