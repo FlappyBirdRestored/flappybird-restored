@@ -8,6 +8,8 @@ import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
 import android.opengl.Matrix;
 import android.util.Log;
+import android.view.Display;
+import android.view.WindowManager;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -105,6 +107,20 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     // Number of quads queued for the current frame (0..50)
     public int quadCount = 0;
 
+    /** Fixed 60 Hz simulation time-step in nanoseconds (1,000,000,000 / 60 = 16,666,666 ns). */
+    public static final long NS_PER_TICK = 1_000_000_000L / 60L;
+
+    /** Maximum real time to accumulate per frame to prevent spiral of death during lag spikes (5 ticks = ~83.3ms). */
+    public static final long MAX_ELAPSED_NS = 5L * NS_PER_TICK;
+
+    // Fixed-timestep accumulator state (decouples 60 Hz physics from 90Hz/120Hz/144Hz displays)
+    public long lastFrameTimeNs = 0L;
+    public long timeAccumulatorNs = 0L;
+
+    /** Detected hardware display refresh rate in Hz (default 60.0 Hz). */
+    public float displayRefreshRate = 60.0f;
+    private int refreshRatePollCounter = 0;
+
     public GLRenderer() {
         initBuffers();
     }
@@ -112,6 +128,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     public GLRenderer(Context context, GameEngine engine) {
         this.context = context;
         this.engine = engine;
+        updateDisplayRefreshRate(context);
         initBuffers();
     }
 
@@ -283,6 +300,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
 
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+        resetTimestep();
         GameEngine.renderBridge = this;
 
         // Clear color is solid black for pillarbox borders
@@ -311,6 +329,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
     @Override
     public void onSurfaceChanged(GL10 gl, int width, int height) {
         computeViewport(width, height);
+        updateDisplayRefreshRate(this.context);
+        resetTimestep();
     }
 
     public interface ActionListener {
@@ -327,30 +347,163 @@ public class GLRenderer implements GLSurfaceView.Renderer, GameEngine.RenderBrid
         return this.actionListener;
     }
 
-    @Override
-    public void onDrawFrame(GL10 gl) {
-        // 1. Clear outer screen to black for clean pillarbox bars
-        GLES20.glViewport(0, 0, this.screenWidth, this.screenHeight);
-        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-
-        // 2. Set pillarboxed viewport for virtual canvas
-        GLES20.glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
-
-        // 3. Reset quad counter for new frame
-        this.quadCount = 0;
-
-        // 4. Run game tick to generate quad draw commands
-        if (this.engine != null) {
-            this.engine.updateAndRender();
-
-            if (this.actionListener != null) {
-                for (int i = 0; i < this.engine.actionLogCount; i++) {
-                    this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
+    /**
+     * Updates detected display refresh rate from the window manager.
+     * Automatically resets the timestep if a dynamic mode switch is detected (e.g. LTPO transitions).
+     */
+    public void updateDisplayRefreshRate(Context ctx) {
+        if (ctx == null) {
+            return;
+        }
+        try {
+            WindowManager wm = (WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
+            if (wm != null) {
+                Display display = wm.getDefaultDisplay();
+                if (display != null) {
+                    float rate = display.getRefreshRate();
+                    if (rate > 20.0f && rate < 300.0f) {
+                        if (Math.abs(this.displayRefreshRate - rate) > 1.0f) {
+                            this.displayRefreshRate = rate;
+                            resetTimestep();
+                        }
+                    }
                 }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    public void setDisplayRefreshRate(float rate) {
+        if (rate > 20.0f && rate < 300.0f) {
+            this.displayRefreshRate = rate;
+        }
+    }
+
+    public float getDisplayRefreshRate() {
+        return this.displayRefreshRate;
+    }
+
+    /**
+     * Resets the fixed-timestep accumulator to prevent catch-up bursts after pauses or lifecycle transitions.
+     */
+    public void resetTimestep() {
+        this.lastFrameTimeNs = 0L;
+        this.timeAccumulatorNs = 0L;
+    }
+
+    /**
+     * Snaps elapsed frame time to the nearest integer multiple of the display's VSync interval
+     * if within scheduler jitter tolerance.
+     * Handles any display refresh rate (e.g. 60Hz, 75Hz, 90Hz, 120Hz, 144Hz, 165Hz, 240Hz)
+     * and prevents beat-frequency accumulator aliasing (alternating 0-tick and 2-tick micro-stutters)
+     * caused by OS thread scheduling variations on VSync-locked displays.
+     */
+    public long snapElapsedToVsync(long elapsedNs) {
+        float rate = this.displayRefreshRate;
+        if (rate < 20.0f) {
+            rate = 60.0f;
+        }
+
+        // Calculate the base hardware VSync period in nanoseconds
+        long vsyncPeriodNs;
+        if (Math.abs(rate - 60.0f) <= 3.0f) {
+            // ~60 Hz display: perfectly align with 60 Hz simulation tick
+            vsyncPeriodNs = NS_PER_TICK;
+        } else if (Math.abs(rate - 120.0f) <= 5.0f) {
+            // ~120 Hz display: exactly half of a 60 Hz simulation tick (8.333 ms)
+            vsyncPeriodNs = NS_PER_TICK / 2L;
+        } else if (Math.abs(rate - 180.0f) <= 5.0f) {
+            // ~180 Hz display: exactly one third of a 60 Hz simulation tick (5.555 ms)
+            vsyncPeriodNs = NS_PER_TICK / 3L;
+        } else if (Math.abs(rate - 240.0f) <= 5.0f) {
+            // ~240 Hz display: exactly one fourth of a 60 Hz simulation tick (4.166 ms)
+            vsyncPeriodNs = NS_PER_TICK / 4L;
+        } else {
+            // Generic display rate (e.g. 75 Hz, 90 Hz, 144 Hz, 165 Hz)
+            vsyncPeriodNs = (long) (1_000_000_000.0 / rate);
+        }
+
+        if (vsyncPeriodNs <= 0L) {
+            return elapsedNs;
+        }
+
+        // Tolerance for Linux scheduler variance: 25% of frame duration, clamped between 1.5ms and 4.0ms
+        long toleranceNs = Math.min(4_000_000L, Math.max(1_500_000L, vsyncPeriodNs / 4L));
+
+        // Find the nearest multiple of VSync (1 frame, or 2..4 dropped frames)
+        int vsyncCount = (int) Math.round((double) elapsedNs / (double) vsyncPeriodNs);
+        if (vsyncCount >= 1 && vsyncCount <= 4) {
+            long expectedNs = vsyncCount * vsyncPeriodNs;
+            if (Math.abs(elapsedNs - expectedNs) <= toleranceNs) {
+                return expectedNs;
             }
         }
 
-        // 5. Draw queued quads
+        return elapsedNs;
+    }
+
+    /**
+     * Advances the engine simulation using the fixed 60 Hz timestep accumulator.
+     *
+     * @param elapsedNs Elapsed real time in nanoseconds since last step.
+     * @return Number of 60 Hz ticks simulated.
+     */
+    public int stepSimulation(long elapsedNs) {
+        long effectiveNs = snapElapsedToVsync(elapsedNs);
+        if (effectiveNs < 0L) {
+            effectiveNs = 0L;
+        } else if (effectiveNs > MAX_ELAPSED_NS) {
+            effectiveNs = MAX_ELAPSED_NS;
+        }
+        this.timeAccumulatorNs += effectiveNs;
+
+        int ticksRun = 0;
+        if (this.engine != null) {
+            while (this.timeAccumulatorNs >= NS_PER_TICK) {
+                this.quadCount = 0;
+                this.engine.updateAndRender();
+
+                if (this.actionListener != null) {
+                    for (int i = 0; i < this.engine.actionLogCount; i++) {
+                        this.actionListener.onAction(this.engine.actionLogTypes[i], this.engine.actionLogValues[i]);
+                    }
+                }
+
+                this.timeAccumulatorNs -= NS_PER_TICK;
+                ticksRun++;
+            }
+        }
+        return ticksRun;
+    }
+
+    @Override
+    public void onDrawFrame(GL10 gl) {
+        // 1. Periodically check for dynamic display refresh rate switches (e.g. LTPO transitions) every 60 frames (~1s)
+        this.refreshRatePollCounter++;
+        if (this.refreshRatePollCounter >= 60) {
+            this.refreshRatePollCounter = 0;
+            updateDisplayRefreshRate(this.context);
+        }
+
+        // 2. Clear outer screen to black for clean pillarbox bars
+        GLES20.glViewport(0, 0, this.screenWidth, this.screenHeight);
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+
+        // 3. Set pillarboxed viewport for virtual canvas
+        GLES20.glViewport(this.viewportX, this.viewportY, this.viewportWidth, this.viewportHeight);
+
+        // 4. Fixed-timestep accumulator: decouple 60 Hz physics from display refresh rate
+        long now = System.nanoTime();
+        if (this.lastFrameTimeNs == 0L) {
+            this.lastFrameTimeNs = now;
+            // Prime accumulator on first frame to ensure initial scene quads are generated
+            stepSimulation(NS_PER_TICK);
+        } else {
+            long elapsed = now - this.lastFrameTimeNs;
+            this.lastFrameTimeNs = now;
+            stepSimulation(elapsed);
+        }
+
+        // 5. Draw queued quads (retains previous frame quads if no logic tick ran)
         renderBatchedQuads();
     }
 

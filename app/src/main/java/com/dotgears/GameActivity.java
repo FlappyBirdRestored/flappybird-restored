@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.opengl.GLSurfaceView;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -48,6 +49,13 @@ public class GameActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        // Request 60 Hz display refresh rate on high refresh rate displays (Android 6.0+ / API 23+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            params.preferredRefreshRate = 60.0f;
+            getWindow().setAttributes(params);
+        }
 
         // Immersive sticky full screen navigation hide
         hideSystemUI();
@@ -260,6 +268,9 @@ public class GameActivity extends Activity {
         hideSystemUI();
         if (this.glSurfaceView != null) {
             this.glSurfaceView.onResume();
+        }
+        if (this.renderer != null) {
+            this.renderer.resetTimestep();
         }
         if (this.game != null) {
             this.game.paused = false;

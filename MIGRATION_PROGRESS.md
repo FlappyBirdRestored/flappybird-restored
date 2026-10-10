@@ -55,7 +55,7 @@ Any agent completing a class **MUST** update this file.
 - [x] `FlappyGame.java` (`com.dotgears.flappy.C0206c`) - Main world controller, pipe generation, collisions (Verified with AABB collision, pipe wrapping/scoring, menu flows & day/night selection test suite)
 
 ### 6. Platform, Rendering & Audio
-- [x] `GLRenderer.java` - Clean GLES20 quad renderer (replaces legacy `C0200c` / AndEngine) (Verified with pillarbox/letterbox viewport, touch coordinate translation, 50-quad vertex/index batching & RenderBridge integration test suite)
+- [x] `GLRenderer.java` - Clean GLES20 quad renderer (replaces legacy `C0200c` / AndEngine) (Verified with pillarbox viewport, touch coordinate translation, 50-quad vertex batching, RenderBridge integration, generic VSync quantization & adaptive LTPO tracking test suite)
 - [x] `AudioManager.java` - Low-latency `SoundPool` audio manager (Verified with action queue dispatch, 5 OGG sounds playback, mute state & GameEngine integration test suite)
 - [x] `GameActivity.java` (`com.dotgears.GameActivity`) - Main Android Activity (Verified with immersive mode, GLES20 lifecycle, touch bridge, audio/action forwarding & back key interception test suite)
 - [x] `SplashScreen.java` (`com.dotgears.flappy.SplashScreen`) - 2-second splash screen (Verified with 2000ms delay constant, SplashRunnable delegation & GameActivity launch test suite)
