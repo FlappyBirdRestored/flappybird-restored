@@ -16,7 +16,7 @@ Any agent completing a class **MUST** update this file.
   * [x] **Category 4: Primary Game Entities & Mechanics** (100% Complete & Verified)
   * [x] **Category 5: Engine, World & Game Loop** (100% Complete & Verified)
   * [x] **Category 6: Platform, Rendering & Audio** (100% Complete & Verified)
-* **Target Package**: `com.dotgears` / `com.dotgears.flappy`
+* **Target Package**: `com.dotgears` / `com.dotgears.flappy` (Application ID: `com.dotgears.flappybird.restored` for side-by-side install)
 * **Target Location**: `app/src/main/java/`
 
 
@@ -68,3 +68,4 @@ Any agent completing a class **MUST** update this file.
 * **Frame Cadence & Variable Refresh Rates**: Decoupled 60 Hz physics simulation from arbitrary display panels (60 Hz, 90 Hz, 120 Hz, 144 Hz, 240 Hz, and <60 Hz power-saving) via pure integer Bresenham cadence scheduling (`acc += 60; while (acc >= rateHz)`), 3-frame resume burst warm-up guard, GL thread rate cross-check, and running median Choreographer hardware VSync tracking.
 * **Memory Model**: Retain original zero-allocation static arrays and object pools to guarantee smooth 60 FPS performance without GC pauses.
 * **Third-Party Services**: Decoupled legacy AdMob and Play Games Services; stubbed with offline fallbacks.
+* **Package Identity & Side-by-Side Coexistence**: Configured `applicationId = "com.dotgears.flappybird.restored"` and launcher label `"Flappy Bird Restored"` while keeping source namespace `com.dotgears.flappybird` to allow installing alongside the legacy 2014 APK without source code churn.
