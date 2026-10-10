@@ -48,4 +48,8 @@ replay_pid*
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Android signing keys & credentials
+*.jks
+*.keystore
 Desktop.ini
